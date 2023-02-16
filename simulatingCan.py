@@ -2,7 +2,7 @@ import numpy as np
 from collections import namedtuple
 from dataclasses import dataclass
 from numpy import sin, cos, arctan2
-
+import copy
 
 nMeas = 200  # maximum number of sensor measurements possible (per sensor)
 nRadars = 6  # number of radars installed around the subject vehicle
@@ -282,7 +282,8 @@ class CTRACK_ESTIMATES:
     def __init__(self, nTracks, nValidTracks=0):
         self.nValidTracks = nValidTracks  # number of valid tracks in time t
         # Track estimated/computed parameters
-        self.TrackParam = [TrackParam for i in range(nTracks)]
+        self.TrackParam = [CTrackParam(0, StateParam(), StateParamAccuracy(),
+                                                     StateParamCAM(), SensorSource(), isTrack(), Track()) for i in range(nTracks)]
         # list of all possible track ids
         self.TrackIDList = [i for i in range(nTracks)]
         # are there track ids assigned to any track
@@ -339,11 +340,12 @@ class CTRAJECTORY_HISTORY:
 TRAJECTORY_HISTORY = CTRAJECTORY_HISTORY(0, TRACK_HISTORY)
 
 # for Track to Track fusion
-TRACK_ESTIMATES_RAD = TRACK_ESTIMATES   # track estimates from the radar sensor
+# track estimates from the radar sensor
+TRACK_ESTIMATES_RAD = CTRACK_ESTIMATES(nTracks, 0)
 # track estimates from the camera sensor
-TRACK_ESTIMATES_CAM = TRACK_ESTIMATES
+TRACK_ESTIMATES_CAM = CTRACK_ESTIMATES(nTracks, 0)
 # track fusion estimates from the radar and camera estimated tracks
-TRACK_ESTIMATES_FUS = TRACK_ESTIMATES
+TRACK_ESTIMATES_FUS = CTRACK_ESTIMATES(nTracks, 0)
 
 
 # # Sensor Measurement Noise
@@ -490,10 +492,10 @@ MANAGE_CLUSTERS = CMANAGE_CLUSTERS()
 
 
 # Boolean Flag array of gated measurement indexes
-GATED_MEAS_INDEX_RAD = np.zeros((1, maxNumMeasRadar),dtype=int)
-GATED_MEAS_INDEX_CAM = np.zeros((1, maxNumMeasCamera),dtype=int)
-GATED_CLUSTER_INDEX_RAD = np.zeros((1, maxNumMeasRadar),dtype=int)
-GATED_CLUSTER_INDEX_CAM = np.zeros((1, maxNumMeasCamera),dtype=int)
+GATED_MEAS_INDEX_RAD = np.zeros((1, maxNumMeasRadar), dtype=int)
+GATED_MEAS_INDEX_CAM = np.zeros((1, maxNumMeasCamera), dtype=int)
+GATED_CLUSTER_INDEX_RAD = np.zeros((1, maxNumMeasRadar), dtype=int)
+GATED_CLUSTER_INDEX_CAM = np.zeros((1, maxNumMeasCamera), dtype=int)
 
 # Track To Measurement Association Matrix
 INV = -99.0

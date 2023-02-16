@@ -16,8 +16,9 @@ dT = SamplingTime  # %in sec (50 millisec)
 # MOTION_MODEL_CV = MODEL.cvmodel(dT, sigmaQ);     # set the process model as constant velocity model
 # MEAS_MODEL_CV = MODEL.cvmeasmodelPxPy();         # set the observation model
 
+# set the process model as constant velocity model
 MOTION_MODEL_CV = cvmodel(dT, sigmaQ)
-MEAS_MODEL_CV = cvmeasmodelPxPy()
+MEAS_MODEL_CV = cvmeasmodelPxPy()  # set the observation model
 
 GammaSq = 9.2103
 P_G = 0.99
@@ -127,10 +128,6 @@ for t in range(nTimeSample):
     RADAR_MEAS_CLUSTER = SEGREGATE_CLUSTER(
         RADAR_MEAS_CTS, RADAR_CLUSTERS, nCounts)
 
-    # % 4) - A) State Prediction of the object Tracks (Step 1: Ego Compensation of the tracks )
-    # TRACK_ESTIMATES_RAD = STATE_PREDICTOR.EGO_COMPENSATION(TRACK_ESTIMATES_RAD, EGO_CAN_BUS, dT, 'none');
-    # % 4) - B) State Prediction of the object Tracks (Step 2: Constant Velocity based Prediction (CV : Linear Motion Model) )
-    # TRACK_ESTIMATES_RAD = STATE_PREDICTOR.LINEAR_PROCESS_MODEL(TRACK_ESTIMATES_RAD, MOTION_MODEL_CV);
 
     # STATE PREDICTION OF RADAR OBJECTS/TRACKS
     # *******************************************************************************

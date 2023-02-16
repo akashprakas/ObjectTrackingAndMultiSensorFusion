@@ -20,7 +20,7 @@ def ChooseNewTrackID(TRACK_DATA):
     else:
         TRACK_DATA.FirstAvailableIDindex = TRACK_DATA.FirstAvailableIDindex + 1
 
-    return NewID, TRACK_DATA
+    return NewID
 
 
 def INIT_NEW_TRACK(CLUSTERS_MEAS, UNASSOCIATED_CLUSTERS, cntMeasClst, TRACK_DATA_in, dT):
@@ -40,7 +40,7 @@ def INIT_NEW_TRACK(CLUSTERS_MEAS, UNASSOCIATED_CLUSTERS, cntMeasClst, TRACK_DATA
     if(TRACK_DATA.nValidTracks == 0 and cntMeasClst == 0):
         # % if no unassociated clusters and valid objects are present then do not set new track
         return
-    posCovIdx = [0, 0]
+    posCovIdx = [0, 3]
     velCovIdx = [1, 4]  # StateCovIndex = [1,2,4,5]
     sigmaSq = 2
     alpha1 = 5
@@ -54,7 +54,7 @@ def INIT_NEW_TRACK(CLUSTERS_MEAS, UNASSOCIATED_CLUSTERS, cntMeasClst, TRACK_DATA
 
         index = objIndex + nObjNew
         # choose a new Track ID
-        [newId, TRACK_DATA] = ChooseNewTrackID(TRACK_DATA)
+        newId = ChooseNewTrackID(TRACK_DATA)
         # assign a new ID to the new Track
         TRACK_DATA.TrackParam[index].id = newId
         # Update the Track Status , sensor catch info , and tracked time
@@ -90,7 +90,7 @@ def MAINTAIN_EXISTING_TRACK(TRACK_DATA_in, dT):
     TRACK_DATA = TRACK_DATA_in
     if(TRACK_DATA.nValidTracks == 0):
         # % if no unassociated clusters are present then do not execute this function
-        return
+        return TRACK_DATA
 
     thresholdPredCounter = 60  # delete if the track is not gated for 3 seconds continuously
     for idx in range(TRACK_DATA.nValidTracks):
