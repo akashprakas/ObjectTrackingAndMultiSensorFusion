@@ -128,7 +128,6 @@ for t in range(nTimeSample):
     RADAR_MEAS_CLUSTER = SEGREGATE_CLUSTER(
         RADAR_MEAS_CTS, RADAR_CLUSTERS, nCounts)
 
-
     # STATE PREDICTION OF RADAR OBJECTS/TRACKS
     # *******************************************************************************
 
@@ -172,4 +171,3 @@ for t in range(nTimeSample):
     TRACK_ESTIMATES_RAD, _ = DELETE_LOST_TRACK(TRACK_ESTIMATES_RAD, TrackParam)
 
     print("hello")
-    break

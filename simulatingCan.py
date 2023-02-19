@@ -274,16 +274,16 @@ class CTrackParam:
         self.Quality = Quality
 
 
-TrackParam = CTrackParam(0, StateParam, StateParamAccuracy,
-                         StateParamCAM, SensorSource, isTrack, Track)
+TrackParam = CTrackParam(0, StateParam(), StateParamAccuracy(),
+                         StateParamCAM(), SensorSource(), isTrack(), Track())
 
 
 class CTRACK_ESTIMATES:
     def __init__(self, nTracks, nValidTracks=0):
         self.nValidTracks = nValidTracks  # number of valid tracks in time t
         # Track estimated/computed parameters
-        self.TrackParam = [CTrackParam(0, StateParam(), StateParamAccuracy(),
-                                                     StateParamCAM(), SensorSource(), isTrack(), Track()) for i in range(nTracks)]
+        self.TrackParam = [copy.deepcopy(CTrackParam(0, StateParam(), StateParamAccuracy(),
+                                                     StateParamCAM(), SensorSource(), isTrack(), Track())) for i in range(nTracks)]
         # list of all possible track ids
         self.TrackIDList = [i for i in range(nTracks)]
         # are there track ids assigned to any track
@@ -515,8 +515,8 @@ class ASSIGNMENT_MAT:
     nMeas: int = 0
 
 
-ASSIGNMENT_MAT_RADAR = [ASSIGNMENT_MAT for i in range(nRadars)]
-ASSIGNMENT_MAT_CAMERA = [ASSIGNMENT_MAT for i in range(nCameras)]
+ASSIGNMENT_MAT_RADAR = [ASSIGNMENT_MAT() for i in range(nRadars)]
+ASSIGNMENT_MAT_CAMERA = [ASSIGNMENT_MAT() for i in range(nCameras)]
 
 
 @dataclass

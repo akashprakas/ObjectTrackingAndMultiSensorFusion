@@ -1,4 +1,5 @@
 import numpy as np
+import copy
 
 
 def ChooseNewTrackID(TRACK_DATA):
@@ -72,7 +73,7 @@ def INIT_NEW_TRACK(CLUSTERS_MEAS, UNASSOCIATED_CLUSTERS, cntMeasClst, TRACK_DATA
         TRACK_DATA.TrackParam[index].StateEstimate.ax = 0.0
         TRACK_DATA.TrackParam[index].StateEstimate.ay = 0.0
         TRACK_DATA.TrackParam[index].StateEstimate.ErrCOV[[posCovIdx[0], posCovIdx[0], posCovIdx[1], posCovIdx[1]],
-                                                          [posCovIdx[0], posCovIdx[1], posCovIdx[0], posCovIdx[1]]] = CLUSTERS_MEAS.ClusterCovariance[:, :, MeasClstID].reshape(4,)
+                                                          [posCovIdx[0], posCovIdx[1], posCovIdx[0], posCovIdx[1]]] = copy.deepcopy(CLUSTERS_MEAS.ClusterCovariance[:, :, MeasClstID].reshape(4,))
         TRACK_DATA.TrackParam[index].StateEstimate.ErrCOV[[velCovIdx[0], velCovIdx[0], velCovIdx[1], velCovIdx[1]],
                                                           [velCovIdx[0], velCovIdx[1], velCovIdx[0], velCovIdx[1]]] = np.array([sigmaSq, 0, 0, sigmaSq]).reshape(4,)
         nObjNew = nObjNew + 1
@@ -117,10 +118,11 @@ def DELETE_LOST_TRACK(TRACK_DATA_in, TrackParamInit):
     # OUTPUTS : TRACK_DATA    : Updated Track Data excluding the Lost Track
     #         : LostTrackIDs  : List of IDs from the lost Track
     # --------------------------------------------------------------------------------------------------------------------------------------------------
-    TRACK_DATA = TRACK_DATA_in
+    # this is an unncessary copy and can be rewritten with good code.
+    TRACK_DATA = copy.deepcopy(TRACK_DATA_in)
     # % if no unassociated clusters are present then do not set new track
     if(TRACK_DATA_in.nValidTracks == 0):
-        return
+        return TRACK_DATA, 0
     nTracksLost = 0
     nSurvivingTracks = 0
     LostTrackIDs = np.zeros((1, 100))
@@ -128,13 +130,13 @@ def DELETE_LOST_TRACK(TRACK_DATA_in, TrackParamInit):
         TRACK_DATA.TrackParam[idx] = TrackParamInit
         # % set the track data if the track is not lost
         if(not TRACK_DATA_in.TrackParam[idx].Status.Lost):
-            nSurvivingTracks = nSurvivingTracks + 1
             TRACK_DATA.TrackParam[nSurvivingTracks] = TRACK_DATA_in.TrackParam[idx]
+            nSurvivingTracks = nSurvivingTracks + 1
         # % reuse the Track IDs if the track is lost
         # TO DO : NEED TO REMOVE THE COMMENTED OUT LINE
         elif(TRACK_DATA_in.TrackParam[idx].Status.Lost):
-            nTracksLost = nTracksLost + 1
             LostTrackIDs[nTracksLost] = TRACK_DATA_in.TrackParam[idx].id
+            nTracksLost = nTracksLost + 1
             #TRACK_DATA_in = TRACK_MANAGER.SelectAndReuseLostTrackID[TRACK_DATA_in, idx]
 
     TRACK_DATA.nValidTracks = TRACK_DATA_in.nValidTracks - nTracksLost

@@ -1,5 +1,6 @@
 import numpy as np
 from numpy import sin, cos
+from dataclasses import dataclass
 
 
 def EGO_COMPENSATION(TRACK_STATE_ESTIMATES_in, EGO_SENSOR_DATA, dT, model=None):
@@ -71,3 +72,39 @@ def LINEAR_PROCESS_MODEL(TRACK_STATE_ESTIMATES_in, motionmodel):
     if(TRACK_STATE_ESTIMATES.nValidTracks == 0):
         # do not perform state prediction if no objects are present
         return TRACK_STATE_ESTIMATES
+    # we are using a constant velocity model so i will assume that and make the models like that
+
+    @dataclass
+    class state:
+        x: np.array = np.zeros((4,), dtype=float)
+        P: np.array = np.zeros((4, 4), dtype=float)
+
+    state1 = state()
+    for idx in range(TRACK_STATE_ESTIMATES.nValidTracks):
+        state1.x = np.array([TRACK_STATE_ESTIMATES.TrackParam[idx].StateEstimate.px,
+                             TRACK_STATE_ESTIMATES.TrackParam[idx].StateEstimate.vx,
+                             TRACK_STATE_ESTIMATES.TrackParam[idx].StateEstimate.py,
+                             TRACK_STATE_ESTIMATES.TrackParam[idx].StateEstimate.vy])
+
+        covIndex = [0, 1, 3, 4]
+        P = TRACK_STATE_ESTIMATES.TrackParam[idx].StateEstimate.ErrCOV  # 6x6
+        row1 = P[[covIndex[0]], covIndex]
+        row2 = P[[covIndex[1]], covIndex]
+        row3 = P[[covIndex[2]], covIndex]
+        row4 = P[[covIndex[3]], covIndex]
+        state1.P = np.array([row1, row2, row3, row4])
+
+        x_t, P_t = motionmodel.predict(state1)
+        TRACK_STATE_ESTIMATES.TrackParam[idx].StateEstimate.px = x_t[0]
+        TRACK_STATE_ESTIMATES.TrackParam[idx].StateEstimate.vx = x_t[1]
+        TRACK_STATE_ESTIMATES.TrackParam[idx].StateEstimate.py = x_t[2]
+        TRACK_STATE_ESTIMATES.TrackParam[idx].StateEstimate.vy = x_t[3]
+        TRACK_STATE_ESTIMATES.TrackParam[idx].StateEstimate.ax = 0.0
+        TRACK_STATE_ESTIMATES.TrackParam[idx].StateEstimate.ay = 0.0
+        P[[covIndex[0]], covIndex] = P_t[0]
+        P[[covIndex[1]], covIndex] = P_t[1]
+        P[[covIndex[2]], covIndex] = P_t[2]
+        P[[covIndex[3]], covIndex] = P_t[3]
+
+    return TRACK_STATE_ESTIMATES
+    # TRACK_STATE_ESTIMATES.TrackParam[idx].StateEstimate.ErrCOV[covIndex, covIndex] = P_t

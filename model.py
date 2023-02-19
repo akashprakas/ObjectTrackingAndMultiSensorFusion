@@ -26,9 +26,12 @@ class cvmodel:
                                       [0, 0,     dT**4/4,  dT**3/2],
                                       [0, 0,     dT**3/2,  dT**2]])
 
-    def predict(self, x):
+    def predict(self, state):
+        x = state.x
+        P = state.P
         x_t = self.F.dot(x)
-        return x_t
+        P_t = self.F.dot(P.dot(self.F.transpose())) + self.Q
+        return x_t, P_t
 
 
 class cvmeasmodelPxPy():
@@ -46,5 +49,5 @@ class cvmeasmodelPxPy():
                            [0, 0, 1, 0]])
 
     def convertToMeasSpace(self, x):
-        x_t = self.h.dot(x)
+        x_t = self.H.dot(x)
         return x_t
