@@ -2,6 +2,43 @@ import numpy as np
 from dataclasses import dataclass
 
 
+def momentMatching(weights, X):
+    # Approximate a Gaussian mixture density as a single Gaussian using moment matching
+    # INPUT: weights: normalised weight of Gaussian components in logarithm domain (number of Gaussians) x 1 vector
+    #              X: structure array of size (number of Gaussian components x 1), each structure has two fields
+    #           mean: means of Gaussian components (variable dimension) x 1 vector
+    #              P: variances of Gaussian components (variable dimension) x (variable dimension) matrix
+    # OUTPUT:  state: a structure with two fields:
+    #              x: approximated mean (variable dimension) x 1 vector
+    #              P: approximated covariance (variable dimension) x (variable dimension) matrix
+    # --------------------------------------------------------------------------------------------------------------------------------------------------
+    nComponents = len(weights)
+    if nComponents == 1:
+        x = X[0, 0].x
+        P = X[0, 0].P
+        return x, P
+    mixtureMean = 0
+    Paverage = 0
+    meanSpread = 0
+    # % convert normalized weights from log scale to linear scale (exp(w))
+    w = np.exp(weights)
+    # compute the weighted average of the means (in the gaussian mixture)
+    for idx in range(nComponents):
+        mixtureMean = mixtureMean + w[idx] * X[idx].x
+
+    # % compute weighted average covariance and spread of the mean
+    for idx in range(nComponents):
+        # % compute weighted average covariance
+        Paverage = Paverage + w[idx] * X[idx].P
+        std = (mixtureMean - X[idx].x).reshape(4, 1)
+        meanSpread = meanSpread + \
+            w[idx]*(std.dot(std.transpose()))   # spread of the mean
+
+    x = mixtureMean
+    P = Paverage + meanSpread
+    return x, P
+
+
 def normalizeLogWeights(LogWeights):
     # Normalize the weights in log scale
     # INPUT  :    LogWeights: log weights, e.g., log likelihoods
@@ -14,7 +51,7 @@ def normalizeLogWeights(LogWeights):
         return LogWeights, sumLogWeights
     # we need to sort in descending order and arguments are also needed so sorting the negative of actual thing to get in descending order
     Index = np.argsort(-LogWeights)
-    logWeights_aux = - np.sort(LogWeights)
+    logWeights_aux = - np.sort(-LogWeights)
     sumLogWeights = max(logWeights_aux) + np.log(1 +
                                                  sum(np.exp(LogWeights[Index[1:]] - max(logWeights_aux))))
     LogWeights = LogWeights - sumLogWeights  # % normalize
@@ -143,14 +180,20 @@ def DATA_ASSOCIATION(TRACK_DATA_in, ASSIGNMENT_MAT, MEAS_CTS, measmodel, FUSION_
             FUSION_INFO[row, col].nHypothesis = 0.0
 
     # NEED TO FILL MORE
-    StateCovIndex = [0, 1, 3, 4]
+    covIndex = [0, 1, 3, 4]
     for idxObj in range(TRACK_DATA.nValidTracks):
         TrackPred.x = np.array([TRACK_DATA.TrackParam[idxObj].StateEstimate.px,
                                 TRACK_DATA.TrackParam[idxObj].StateEstimate.vx,
                                 TRACK_DATA.TrackParam[idxObj].StateEstimate.py,
                                 TRACK_DATA.TrackParam[idxObj].StateEstimate.vy])
-        # NEED TO REMOVE THIS COVARIANCE AND REPLACE WITH THE CORRECT ONE
-        TrackPred.P = TRACK_DATA.TrackParam[idxObj].StateEstimate.ErrCOV[:4, :4]
+        # CHECK AND SEE IF THE COVS ARE COMING CORRECTLY
+        P_ = TRACK_DATA.TrackParam[idxObj].StateEstimate.ErrCOV
+        row1 = P_[[covIndex[0]], covIndex]
+        row2 = P_[[covIndex[1]], covIndex]
+        row3 = P_[[covIndex[2]], covIndex]
+        row4 = P_[[covIndex[3]], covIndex]
+
+        TrackPred.P = np.array([row1, row2, row3, row4])
 
         for snsrIdx in range(len(ASSIGNMENT_MAT)):
             Beta, BetaSum, MixtureComponents, nHypothesis, TrackPred = AssociationHypothesis(TrackPred, ASSIGNMENT_MAT[snsrIdx],
@@ -158,7 +201,8 @@ def DATA_ASSOCIATION(TRACK_DATA_in, ASSIGNMENT_MAT, MEAS_CTS, measmodel, FUSION_
             FUSION_INFO[idxObj, snsrIdx].Beta = Beta
             FUSION_INFO[idxObj, snsrIdx].BetaSum = BetaSum
             FUSION_INFO[idxObj, snsrIdx].MixtureComponents = MixtureComponents
-            FUSION_INFO[idxObj, snsrIdx].nHypothesis = nHypothesis
+            # adding plus one because the index start at zero and the prediction is considered as one hyopthesis even if there is no update
+            FUSION_INFO[idxObj, snsrIdx].nHypothesis = nHypothesis+1
             FUSION_INFO[idxObj, snsrIdx].x = TrackPred.x
             FUSION_INFO[idxObj, snsrIdx].P = TrackPred.P
 
@@ -175,4 +219,71 @@ def HOMOGENEOUS_SENSOR_FUSION_RADARS(TRACK_DATA_in, FUSION_INFO_RAD):
     if(TRACK_DATA.nValidTracks == 0):
 
         return TRACK_DATA
-    # NEED TO FILL MORE
+
+    covIndex = [0, 1, 3, 4]
+    # %for state err covariance(corresponding to px, vx, py, vy)
+    nRadars = FUSION_INFO_RAD.shape[1]  # % number of cameras
+
+    for idxObj in range(TRACK_DATA_in.nValidTracks):
+        # initialize the hypothesis and other things initially
+        validIndex = np.zeros((1, nRadars), dtype=int)
+        nHypothesis = np.zeros((1, nRadars), dtype=int)
+        Beta = np.zeros((1, nRadars))
+        # initialize some parameters to zeros
+        TRACK_DATA.TrackParam[idxObj].Status.Predicted = False
+        TRACK_DATA.TrackParam[idxObj].Status.Gated = False
+        TRACK_DATA.TrackParam[idxObj].SensorSource.RadarCatch = False
+        TRACK_DATA.TrackParam[idxObj].SensorSource.RadarSource[:] = False
+        count = 0
+        for idxSnsr in range(nRadars):
+            # initialize some parameters to zeros
+            Beta[0, idxSnsr] = FUSION_INFO_RAD[idxObj, idxSnsr].BetaSum
+            nHypothesis[0, idxSnsr] = FUSION_INFO_RAD[idxObj,
+                                                      idxSnsr].nHypothesis
+        if (int(np.sum(nHypothesis)) == nRadars):  # % only prediction
+            MixtureComponents = FUSION_INFO_RAD[idxObj, 0:nRadars]
+            Beta, _ = normalizeLogWeights(Beta)
+            Xfus, Pfus = momentMatching(
+                Beta, MixtureComponents)
+            TRACK_DATA.TrackParam[idxObj].StateEstimate.px = Xfus[0]
+            TRACK_DATA.TrackParam[idxObj].StateEstimate.vx = Xfus[1]
+            TRACK_DATA.TrackParam[idxObj].StateEstimate.py = Xfus[2]
+            TRACK_DATA.TrackParam[idxObj].StateEstimate.vy = Xfus[3]
+            # NEED TO CHANGE THIS PART OF THE CODE!!!!
+            TRACK_DATA.TrackParam[idxObj].StateEstimate.ErrCOV[:4,
+                                                               :4] = Pfus
+            TRACK_DATA.TrackParam[idxObj].Status.Predicted = True
+            TRACK_DATA.TrackParam[idxObj].Status.Gated = False
+            TRACK_DATA.TrackParam[idxObj].SensorSource.RadarCatch = False
+            TRACK_DATA.TrackParam[idxObj].SensorSource.RadarSource[:] = False
+
+        elif (int(np.sum(nHypothesis)) > nRadars):  # % merge estimates from different sensors
+            for idxSnsr in range(nRadars):
+                # % consider only those state estimate which was updated by at least one measurement
+                if(FUSION_INFO_RAD[idxObj, idxSnsr].nHypothesis > 1):
+                    validIndex[0, count] = idxSnsr
+                    count = count + 1
+                    TRACK_DATA.TrackParam[idxObj].SensorSource.RadarSource[idxSnsr] = 1.0
+            MixtureComponents = FUSION_INFO_RAD[idxObj, validIndex[0, 0:count]]
+            Beta, _ = normalizeLogWeights(
+                Beta[0, validIndex[0, 0:count]])
+            Xfus, Pfus = momentMatching(
+                Beta, MixtureComponents)
+            TRACK_DATA.TrackParam[idxObj].StateEstimate.px = Xfus[0]
+            TRACK_DATA.TrackParam[idxObj].StateEstimate.vx = Xfus[1]
+            TRACK_DATA.TrackParam[idxObj].StateEstimate.py = Xfus[2]
+            TRACK_DATA.TrackParam[idxObj].StateEstimate.vy = Xfus[3]
+            # NEED TO CHANGE THIS PART OF THE CODE!!!!
+            P_ = TRACK_DATA.TrackParam[idxObj].StateEstimate.ErrCOV
+            P_[[covIndex[0]], covIndex] = Pfus[0]
+            P_[[covIndex[1]], covIndex] = Pfus[1]
+            P_[[covIndex[2]], covIndex] = Pfus[2]
+            P_[[covIndex[3]], covIndex] = Pfus[3]
+
+            # TRACK_DATA.TrackParam[idxObj].StateEstimate.ErrCOV[:4,
+            #    :4] = Pfus
+            TRACK_DATA.TrackParam[idxObj].Status.Predicted = False
+            TRACK_DATA.TrackParam[idxObj].Status.Gated = True
+            TRACK_DATA.TrackParam[idxObj].SensorSource.RadarCatch = True
+
+    return TRACK_DATA

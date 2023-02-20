@@ -13,8 +13,6 @@ from trackManger import *
 sigmaQ = 1
 SamplingTime = .05
 dT = SamplingTime  # %in sec (50 millisec)
-# MOTION_MODEL_CV = MODEL.cvmodel(dT, sigmaQ);     # set the process model as constant velocity model
-# MEAS_MODEL_CV = MODEL.cvmeasmodelPxPy();         # set the observation model
 
 # set the process model as constant velocity model
 MOTION_MODEL_CV = cvmodel(dT, sigmaQ)
