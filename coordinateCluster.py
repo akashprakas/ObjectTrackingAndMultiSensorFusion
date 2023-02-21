@@ -60,7 +60,6 @@ def CTS_SENSOR_FRAME_TO_EGO_FRAME(nSensors, nMeas, SENSOR_INSTALLATION_PARAMETER
                 # save the can array index in the measurement array
                 MEAS_TRANSFORMED_ARRAY.MeasRef[0, TotalCount] = objIdx
 
-                #import pdb;pdb.set_trace()
                 # sensor ID
                 MEAS_TRANSFORMED_ARRAY.MeasRef[1,
                                                TotalCount] = MEAS_CAN_BUS[snsrIdx, objIdx].sensorID

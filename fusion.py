@@ -14,8 +14,8 @@ def momentMatching(weights, X):
     # --------------------------------------------------------------------------------------------------------------------------------------------------
     nComponents = len(weights)
     if nComponents == 1:
-        x = X[0, 0].x
-        P = X[0, 0].P
+        x = X[0].x
+        P = X[0].P
         return x, P
     mixtureMean = 0
     Paverage = 0
@@ -250,8 +250,14 @@ def HOMOGENEOUS_SENSOR_FUSION_RADARS(TRACK_DATA_in, FUSION_INFO_RAD):
             TRACK_DATA.TrackParam[idxObj].StateEstimate.py = Xfus[2]
             TRACK_DATA.TrackParam[idxObj].StateEstimate.vy = Xfus[3]
             # NEED TO CHANGE THIS PART OF THE CODE!!!!
-            TRACK_DATA.TrackParam[idxObj].StateEstimate.ErrCOV[:4,
-                                                               :4] = Pfus
+            # TRACK_DATA.TrackParam[idxObj].StateEstimate.ErrCOV[:4,
+            #                                                    :4] = Pfus
+            P_ = TRACK_DATA.TrackParam[idxObj].StateEstimate.ErrCOV
+            P_[[covIndex[0]], covIndex] = Pfus[0]
+            P_[[covIndex[1]], covIndex] = Pfus[1]
+            P_[[covIndex[2]], covIndex] = Pfus[2]
+            P_[[covIndex[3]], covIndex] = Pfus[3]
+
             TRACK_DATA.TrackParam[idxObj].Status.Predicted = True
             TRACK_DATA.TrackParam[idxObj].Status.Gated = False
             TRACK_DATA.TrackParam[idxObj].SensorSource.RadarCatch = False

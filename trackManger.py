@@ -2,6 +2,39 @@ import numpy as np
 import copy
 
 
+def ComputeTrackInitScore(TRACK_DATA, idx, dT, alpha1, alpha2):
+    # Use counter based logic for computing the score for Track initialization recursively
+    # An ungated measurement is initialized as a new track and a initialization score is recursively computed , if it is above
+    # a threshold then the track is set as a 'confirmed' track
+    # INPUTS  : TRACK_DATA : data structure corresponding to Track Data ( for details refer to the script 'SensorFusion_Script3_LOAD_DATA_STRUCTURE_PARAMETERS.m')
+    #         : idx        : a track index for refering to the track 'TRACK_DATA.TrackParam(idx)'
+    #         : dT         : sample time
+    #         : alpha1     : threshold for track gated counter
+    #         : alpha2     : threshold for sum of gated and predicted counter
+    # OUTPUTS : TRACK_DATA : Track data structure containing the updated track management data
+    #         : TrackInitScore : Computed track initialization score
+    # --------------------------------------------------------------------------------------------------------------------------------------------------
+    if(TRACK_DATA.TrackParam[idx].Status.Gated):
+        TRACK_DATA.TrackParam[idx].Quality.GatedCounter = TRACK_DATA.TrackParam[idx].Quality.GatedCounter + 1
+    elif(TRACK_DATA.TrackParam[idx].Status.Predicted):
+        TRACK_DATA.TrackParam[idx].Quality.PredictedCounter = TRACK_DATA.TrackParam[idx].Quality.PredictedCounter + 1
+
+    TRACK_DATA.TrackParam[idx].Quality.TrackedTime = TRACK_DATA.TrackParam[idx].Quality.TrackedTime + dT
+    Gt = TRACK_DATA.TrackParam[idx].Quality.GatedCounter
+    Pt = TRACK_DATA.TrackParam[idx].Quality.PredictedCounter
+    St = Gt + Pt
+    if(St <= alpha2):
+        if(Gt >= alpha1):
+            TrackInitScore = 1  # % track is confirmed
+        else:
+            TrackInitScore = 2  # % track is still new
+
+    elif(St > alpha2):
+        TrackInitScore = 3  # % track is Lost
+
+    return TrackInitScore
+
+
 def ChooseNewTrackID(TRACK_DATA):
     # Select a unique ID for Track initialization
     # INPUTS  : TRACK_DATA : data structure corresponding to Track Data, Track Management data is located here
@@ -49,6 +82,37 @@ def INIT_NEW_TRACK(CLUSTERS_MEAS, UNASSOCIATED_CLUSTERS, cntMeasClst, TRACK_DATA
     objIndex = TRACK_DATA.nValidTracks
 
     # THERE IS SOMETHING THAT NEEDS TO BE ADDED HERE
+
+    # % if the track is a 'new' track update the track init function
+    for idx in range(TRACK_DATA.nValidTracks):
+        if(TRACK_DATA.TrackParam[idx].Status.New):
+            TrackInitScore = ComputeTrackInitScore(
+                TRACK_DATA, idx, dT, alpha1, alpha2)
+            if(TrackInitScore == 1):  # set the track as 'confirmed' track
+                # the track is no more 'new'
+                TRACK_DATA.TrackParam[idx].Status.New = False
+                # the track is existing/confirmed
+                TRACK_DATA.TrackParam[idx].Status.Existing = True
+                # the track is not lost
+                TRACK_DATA.TrackParam[idx].Status.Lost = False
+                # reset the gated counter
+                TRACK_DATA.TrackParam[idx].Quality.GatedCounter = 0
+                # reset the predicted counter
+                TRACK_DATA.TrackParam[idx].Quality.PredictedCounter = 0
+            elif(TrackInitScore == 2):   # keep it as 'new' track
+                # the track is still 'new'
+                TRACK_DATA.TrackParam[idx].Status.New = True
+                # the track is not existing/stll not confirmed
+                TRACK_DATA.TrackParam[idx].Status.Existing = False
+                # the track is not lost
+                TRACK_DATA.TrackParam[idx].Status.Lost = False
+            elif(TrackInitScore == 3):  # tag the track status as 'lost' for deletion
+                # the track is no more 'new'
+                TRACK_DATA.TrackParam[idx].Status.New = False
+                # the track is not existing
+                TRACK_DATA.TrackParam[idx].Status.Existing = False
+                # the track is lost
+                TRACK_DATA.TrackParam[idx].Status.Lost = True
 
     for idx in range(cntMeasClst):
         MeasClstID = int(UNASSOCIATED_CLUSTERS[0, idx])
@@ -127,7 +191,7 @@ def DELETE_LOST_TRACK(TRACK_DATA_in, TrackParamInit):
     nSurvivingTracks = 0
     LostTrackIDs = np.zeros((1, 100))
     for idx in range(TRACK_DATA_in.nValidTracks):
-        TRACK_DATA.TrackParam[idx] = TrackParamInit
+        TRACK_DATA.TrackParam[idx] = copy.deepcopy(TrackParamInit)
         # % set the track data if the track is not lost
         if(not TRACK_DATA_in.TrackParam[idx].Status.Lost):
             TRACK_DATA.TrackParam[nSurvivingTracks] = TRACK_DATA_in.TrackParam[idx]
@@ -135,7 +199,7 @@ def DELETE_LOST_TRACK(TRACK_DATA_in, TrackParamInit):
         # % reuse the Track IDs if the track is lost
         # TO DO : NEED TO REMOVE THE COMMENTED OUT LINE
         elif(TRACK_DATA_in.TrackParam[idx].Status.Lost):
-            LostTrackIDs[nTracksLost] = TRACK_DATA_in.TrackParam[idx].id
+            LostTrackIDs[0,nTracksLost] = TRACK_DATA_in.TrackParam[idx].id
             nTracksLost = nTracksLost + 1
             #TRACK_DATA_in = TRACK_MANAGER.SelectAndReuseLostTrackID[TRACK_DATA_in, idx]
 
