@@ -1,5 +1,6 @@
 import numpy as np
 from dataclasses import dataclass
+import copy
 
 
 def momentMatching(weights, X):
@@ -138,6 +139,7 @@ def AssociationHypothesis(TrackPred, ASSIGNMENT_MAT, MEAS_CTS, measmodel, snsrId
     MixtureComponents[nHypothesis] = TrackPred
     Beta[0, nHypothesis] = ASSIGNMENT_MAT.AssociationMat[idxObj,
                                                          int(idxObj) + int(nMeasSnsr)]  # miss detection weight
+    TrackUpd = TrackPred
     for idxMeas in range(nMeasSnsr):
 
         if(ASSIGNMENT_MAT.AssociationMat[idxObj, idxMeas] != INVALID_WT):
@@ -153,7 +155,7 @@ def AssociationHypothesis(TrackPred, ASSIGNMENT_MAT, MEAS_CTS, measmodel, snsrId
             Beta[0, nHypothesis] = ASSIGNMENT_MAT.AssociationMat[
                 idxObj, idxMeas]  # %detection weight substracting one so that the indexing will work properly.
     [Beta, BetaSum] = normalizeLogWeights(Beta[0, 0: nHypothesis+1])
-    return Beta, BetaSum, MixtureComponents, nHypothesis, TrackPred
+    return Beta, BetaSum, MixtureComponents, nHypothesis, TrackUpd
 
 
 def DATA_ASSOCIATION(TRACK_DATA_in, ASSIGNMENT_MAT, MEAS_CTS, measmodel, FUSION_INFO):
@@ -196,15 +198,15 @@ def DATA_ASSOCIATION(TRACK_DATA_in, ASSIGNMENT_MAT, MEAS_CTS, measmodel, FUSION_
         TrackPred.P = np.array([row1, row2, row3, row4])
 
         for snsrIdx in range(len(ASSIGNMENT_MAT)):
-            Beta, BetaSum, MixtureComponents, nHypothesis, TrackPred = AssociationHypothesis(TrackPred, ASSIGNMENT_MAT[snsrIdx],
-                                                                                             MEAS_CTS,  measmodel, snsrIdx, idxObj)
+            Beta, BetaSum, MixtureComponents, nHypothesis, TrackUpdated = AssociationHypothesis(TrackPred, ASSIGNMENT_MAT[snsrIdx],
+                                                                                                MEAS_CTS,  measmodel, snsrIdx, idxObj)
             FUSION_INFO[idxObj, snsrIdx].Beta = Beta
             FUSION_INFO[idxObj, snsrIdx].BetaSum = BetaSum
             FUSION_INFO[idxObj, snsrIdx].MixtureComponents = MixtureComponents
             # adding plus one because the index start at zero and the prediction is considered as one hyopthesis even if there is no update
             FUSION_INFO[idxObj, snsrIdx].nHypothesis = nHypothesis+1
-            FUSION_INFO[idxObj, snsrIdx].x = TrackPred.x
-            FUSION_INFO[idxObj, snsrIdx].P = TrackPred.P
+            FUSION_INFO[idxObj, snsrIdx].x = TrackUpdated.x
+            FUSION_INFO[idxObj, snsrIdx].P = TrackUpdated.P
 
     return TRACK_DATA, FUSION_INFO
 
@@ -293,3 +295,158 @@ def HOMOGENEOUS_SENSOR_FUSION_RADARS(TRACK_DATA_in, FUSION_INFO_RAD):
             TRACK_DATA.TrackParam[idxObj].SensorSource.RadarCatch = True
 
     return TRACK_DATA
+
+
+def CovarianceIntersection(Xr, W):
+    # % Fusion of Gaussian Distributions by Covarience Intersection method
+    # % INPUT : W  : normalised weight of Gaussian components (row vector : 1 x N )
+    # %       : Xr : structure array of size (1 x N), each structure has two fields
+    # %          x : mean
+    # %          P : covariance
+    # % OUTPUT : X : mean vector by covariance intersection
+    # %        : P : covariance intersection matrix
+    # % --------------------------------------------------------------------------------------------------------------
+
+    if(len(W) == 1):
+        X = Xr[0, 0].x
+        P = Xr[0, 0].P
+        return X, P
+
+    dim = Xr.shape[1]
+    Pavginv = 0
+    temp = 0
+    I = np.eye(dim)
+    # NOTE EVERYTHING BELOW IS WRONG AND NEED TO BE RECALCULATED
+    for i in range(len(W)):
+        Pavginv = Pavginv + W[0, i] * ((Xr[0, i].P).dot(I))
+        temp = temp + W[0, i] * ((Xr[0, i].P).dot(Xr[0, i].x))
+
+    P = Pavginv
+    X = P*temp
+
+
+def TRACK_FUSION_HETEROGENEOUS_SENSORS(TRACK_ESTIMATES_FUS_in, TRACK_ESTIMATES_RAD, TRACK_ESTIMATES_CAM, GATED_TRACK_INFO):
+    # % Sensor Fusion with multiple cameras
+    # % INPUTS : TRACK_ESTIMATES_FUS_in : Fused Track Data structure
+    # %        : TRACK_ESTIMATES_RAD    : Local Track estimates from Radar sensors
+    # %        : TRACK_ESTIMATES_CAM    : Local Track estimates from Camera sensors
+    # %        : GATED_TRACK_INFO       : Local Track to Fused Track gating info
+    # % OUTPUT : TRACK_ESTIMATES_FUS    : Data Fusion results (Radar Tracks + Camera Tracks)
+    # % --------------------------------------------------------------------------------------------------------------------------------------------------
+    # % execute this function only if there are valid tracks
+
+    TRACK_ESTIMATES_FUS = copy.deepcopy(TRACK_ESTIMATES_FUS_in)
+    if(TRACK_ESTIMATES_FUS.nValidTracks == 0):
+        return TRACK_ESTIMATES_FUS
+
+    # % initializations
+    StateCovIndex = [0, 1, 3, 4]
+    nLocalTracksCam = 100
+    nLocalTracksRad = 100
+    nLocalTracks = nLocalTracksCam + nLocalTracksRad
+    dim = 4
+
+    @dataclass
+    class CXTracks:
+
+        x = np.zeros((dim, 1))
+        P = np.zeros((dim, dim))
+
+    XTracks = [CXTracks() for _ in nLocalTracks]
+    weights = np.zeros((1, dim))
+    CameraSource = 0
+    RadarSource = 0
+   # @% Association of the local tracks with the fused track
+    # % for each of the predicted fused tracks
+    for idx in range(TRACK_ESTIMATES_FUS.nValidTracks):
+        count = 0
+        # % number of gated radar local tracks
+        nRadGatedTracks = GATED_TRACK_INFO[idx].nGatedRadarTracks
+        # % number of gated camera local tracks
+        nCamGatedTracks = GATED_TRACK_INFO[idx].nGatedCameraTracks
+        # % total number of gated radar + camera local tracks
+        nGatedTracks = nRadGatedTracks + nCamGatedTracks
+        GatedTrack = False
+        PredictedTrack = True
+        RadarCatch = False
+        CameraCatch = False
+        CameraSource = False
+        RadarSource = False
+        for i in range(nRadGatedTracks):
+
+            j = GATED_TRACK_INFO(idx).RadarTracks(1, i)
+            XTracks[count].x[0,
+                             0] = TRACK_ESTIMATES_RAD.TrackParam[j].StateEstimate.px
+            XTracks[count].x[1,
+                             0] = TRACK_ESTIMATES_RAD.TrackParam[j].StateEstimate.vx
+            XTracks[count].x[2,
+                             0] = TRACK_ESTIMATES_RAD.TrackParam[j].StateEstimate.py
+            XTracks[count].x[3,
+                             0] = TRACK_ESTIMATES_RAD.TrackParam[j].StateEstimate.vy
+            XTracks[count].P = TRACK_ESTIMATES_RAD.TrackParam[j].StateEstimate.ErrCOV[:4, :4]
+            # % updat varios flags here
+            RadarCatch = (
+                RadarCatch or TRACK_ESTIMATES_RAD.TrackParam[j].SensorSource.RadarCatch)
+            RadarSource = (
+                RadarSource or TRACK_ESTIMATES_RAD.TrackParam[j].SensorSource.RadarSource)
+            GatedTrack = (
+                GatedTrack or TRACK_ESTIMATES_RAD.TrackParam[j].Status.Gated)
+            PredictedTrack = (
+                PredictedTrack and TRACK_ESTIMATES_RAD.TrackParam[j].Status.Predicted)
+            count = count + 1
+
+        for i in range(nCamGatedTracks):
+
+            j = GATED_TRACK_INFO(idx).CameraTracks(1, i)
+            XTracks[count].x[0, 1] = TRACK_ESTIMATES_CAM.TrackParam(
+                1, j).StateEstimate.px
+            XTracks[count].x[1, 1] = TRACK_ESTIMATES_CAM.TrackParam(
+                1, j).StateEstimate.vx
+            XTracks[count].x[2, 1] = TRACK_ESTIMATES_CAM.TrackParam(
+                1, j).StateEstimate.py
+            XTracks[count].x[3, 1] = TRACK_ESTIMATES_CAM.TrackParam(
+                1, j).StateEstimate.vy
+            XTracks[count].P = TRACK_ESTIMATES_CAM.TrackParam(
+                1, j).StateEstimate.ErrCOV[:4, :4]
+            # % update various flags here
+            CameraCatch = (
+                CameraCatch or TRACK_ESTIMATES_CAM.TrackParam[j].SensorSource.CameraCatch)
+            CameraSource = (
+                CameraSource or TRACK_ESTIMATES_CAM.TrackParam[j].SensorSource.CameraSource)
+            GatedTrack = (
+                GatedTrack or TRACK_ESTIMATES_CAM.TrackParam[j].Status.Gated)
+            PredictedTrack = (
+                PredictedTrack and TRACK_ESTIMATES_CAM.TrackParam[j].Status.Predicted)
+            count = count + 1
+
+        if(nGatedTracks == 0):  # % only prediction , no fusion
+            # % update various counters here
+            TRACK_ESTIMATES_FUS.TrackParam[idx].SensorSource.RadarCatch = False
+            TRACK_ESTIMATES_FUS.TrackParam[idx].SensorSource.CameraCatch = False
+            TRACK_ESTIMATES_FUS.TrackParam[idx].SensorSource.RadarAndCameraCatch = False
+            TRACK_ESTIMATES_FUS.TrackParam[idx].SensorSource.RadarSource[:] = False
+            TRACK_ESTIMATES_FUS.TrackParam[idx].SensorSource.CameraSource[:] = False
+            TRACK_ESTIMATES_FUS.TrackParam[idx].Status.Predicted = True
+            TRACK_ESTIMATES_FUS.TrackParam[idx].Status.Gated = False
+
+        elif(nGatedTracks > 0):  # % else track fusion
+            # % assign equal weights to all local sensor estimates
+            weights[0, 1:count] = 1/nGatedTracks
+            Xfus, Pfus = CovarianceIntersection(
+                XTracks[0, 0:count], weights[0, 1:count])
+            TRACK_ESTIMATES_FUS.TrackParam[idx].StateEstimate.px = Xfus(1, 1)
+            TRACK_ESTIMATES_FUS.TrackParam[idx].StateEstimate.vx = Xfus(2, 1)
+            TRACK_ESTIMATES_FUS.TrackParam[idx].StateEstimate.py = Xfus(3, 1)
+            TRACK_ESTIMATES_FUS.TrackParam[idx].StateEstimate.vy = Xfus(4, 1)
+            TRACK_ESTIMATES_FUS.TrackParam[idx].StateEstimate.ErrCOV[:4, :4] = Pfus
+            RadarCameraCatch = (RadarCatch and CameraCatch)
+            # % update various counters here
+            TRACK_ESTIMATES_FUS.TrackParam[idx].SensorSource.CameraCatch = CameraCatch
+            TRACK_ESTIMATES_FUS.TrackParam[idx].SensorSource.RadarCatch = RadarCatch
+            TRACK_ESTIMATES_FUS.TrackParam[idx].SensorSource.RadarCameraCatch = RadarCameraCatch
+            TRACK_ESTIMATES_FUS.TrackParam[idx].SensorSource.CameraSource = CameraSource
+            TRACK_ESTIMATES_FUS.TrackParam[idx].SensorSource.RadarSource = RadarSource
+            TRACK_ESTIMATES_FUS.TrackParam[idx].Status.Predicted = PredictedTrack
+            TRACK_ESTIMATES_FUS.TrackParam[idx].Status.Gated = GatedTrack
+
+    return TRACK_ESTIMATES_FUS

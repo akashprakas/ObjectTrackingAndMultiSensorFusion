@@ -83,6 +83,40 @@ def CTS_SENSOR_FRAME_TO_EGO_FRAME(nSensors, nMeas, SENSOR_INSTALLATION_PARAMETER
 #  5. Perform Data association , radar sensor fusion and state estimation
 #  6. Manage Radar Tracks by a Radar Track manager
 
+
+#finding the mean and var of 
+def findMeanAndVarCAM(CAMERA_MEAS_CTS, CAMERA_CLUSTERS, epsPosDBSCAN=5):
+
+    # CAMERAMeasCTS, MANAGE_CLUSTER, CAMERA_CLUSTERS, epsPos
+    nCounts = np.sum(CAMERA_MEAS_CTS.ValidMeasCount)
+    dataCopy = CAMERA_MEAS_CTS.MeasArray[:, :nCounts].copy()  # 2 x nCounts
+    # when we use the dbscan we need things to be n_counts x Features , so transposing this
+    datacopyT = dataCopy.transpose()
+    dbscan_cluster_model = DBSCAN(
+        eps=epsPosDBSCAN, min_samples=1).fit(datacopyT)
+    labels = dbscan_cluster_model.labels_
+    clusters_found = np.unique(labels).shape[0]
+    if -1 in labels:
+        clusters_found = clusters_found - 1  # -1 mean not associated measurments
+    CAMERA_CLUSTERS.nClusters = clusters_found
+    for i in range(clusters_found):
+        filter_ = labels == i
+        cloud_size = np.sum(filter_)
+        points = datacopyT[filter_]
+        centroid = np.mean(points, axis=0)
+        if (points.shape[0]==1):
+            cov = np.eye(2)
+        else:
+            cov = np.cov(points.transpose())
+        CAMERA_CLUSTERS.ClusterCenters[:, i] = centroid
+        CAMERA_CLUSTERS.ClusterCovariance[:, :, i] = cov
+        CAMERA_CLUSTERS.ClusterIDs[0, i] = i
+        CAMERA_CLUSTERS.ClustIDAssig[0, :nCounts][filter_] = i
+        CAMERA_CLUSTERS.ClusterSizes[0, i] = cloud_size
+
+    return CAMERA_CLUSTERS, nCounts
+
+
 def findMeanAndVar(RADAR_MEAS_CTS, RADAR_CLUSTERS, epsPosDBSCAN=5):
     # clusters radar measurements using DBSCAN algorithm
     # INPUT:  RADARMeasCTS : array of radar measurements transformed from sensor frame to ego vehicle frame

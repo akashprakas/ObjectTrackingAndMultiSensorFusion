@@ -323,7 +323,7 @@ def CAM_SENSOR_INTERFACE(CAM1_Sensor_Simulated_Data,
         else:
             print('Sensor out of range')
 
-        return CAMERA_CAN_BUS
+    return CAMERA_CAN_BUS
 
 # note the egoCanBus and EgoSensorSimulatedData are not numpy arrays, they are named tuples
 

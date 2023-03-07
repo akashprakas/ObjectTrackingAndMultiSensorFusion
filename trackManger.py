@@ -1,5 +1,6 @@
 import numpy as np
 import copy
+from dataclasses import dataclass
 
 
 def ComputeTrackInitScore(TRACK_DATA, idx, dT, alpha1, alpha2):
@@ -199,9 +200,9 @@ def DELETE_LOST_TRACK(TRACK_DATA_in, TrackParamInit):
         # % reuse the Track IDs if the track is lost
         # TO DO : NEED TO REMOVE THE COMMENTED OUT LINE
         elif(TRACK_DATA_in.TrackParam[idx].Status.Lost):
-            LostTrackIDs[0,nTracksLost] = TRACK_DATA_in.TrackParam[idx].id
+            LostTrackIDs[0, nTracksLost] = TRACK_DATA_in.TrackParam[idx].id
             nTracksLost = nTracksLost + 1
-            #TRACK_DATA_in = TRACK_MANAGER.SelectAndReuseLostTrackID[TRACK_DATA_in, idx]
+            # TRACK_DATA_in = TRACK_MANAGER.SelectAndReuseLostTrackID[TRACK_DATA_in, idx]
 
     TRACK_DATA.nValidTracks = TRACK_DATA_in.nValidTracks - nTracksLost
     TRACK_DATA.TrackIDList = TRACK_DATA_in.TrackIDList
@@ -209,3 +210,509 @@ def DELETE_LOST_TRACK(TRACK_DATA_in, TrackParamInit):
     TRACK_DATA.FirstAvailableIDindex = TRACK_DATA_in.FirstAvailableIDindex
     TRACK_DATA.LastAvailableIDindex = TRACK_DATA_in.LastAvailableIDindex
     return TRACK_DATA, LostTrackIDs
+
+
+def SET_NEW_TRACK_INFO(TRACK_DATA_in, FUSED_TRACKS, nNewTracks, dT):
+    # % Set new track info (Specifically for TRACK to TRACK fusion)
+    # % INPUTS  : TRACK_DATA_in  : data structure corresponding to Track Data
+    # %         : FUSED_TRACKS   : New Track info for the fused tracks
+    # %         : nNewTracks     : number of new Tracks
+    # %         : dT             : sampling time
+    # % OUTPUTS : TRACK_DATA    : Updated Track Data excluding the Lost Track
+    # % ---------------------------------------------------------------------------
+    TRACK_DATA = copy.deepcopy(TRACK_DATA_in)
+    # % if no unassociated clusters and valid objects are present then do not set new track
+    if(TRACK_DATA.nValidTracks == 0 and nNewTracks == 0):
+        return
+
+    StateParamIndex = [0, 1, 3, 4]
+    nObjNew = 0
+    objIndex = TRACK_DATA.nValidTracks
+    alpha1 = 5
+    alpha2 = 8
+
+    # % if the track is a 'new' track update the track init function
+    for idx in range(TRACK_DATA.nValidTracks):
+        if(TRACK_DATA.TrackParam[idx].Status.New):
+            TrackInitScore, TRACK_DATA = ComputeTrackInitScore(
+                TRACK_DATA, idx, dT, alpha1, alpha2)
+            if(TrackInitScore == 1):  # % set the track as 'confirmed' track
+                # % the track is no more 'new'
+                TRACK_DATA.TrackParam[idx].Status.New = False
+                # % the track is existing/confirmed
+                TRACK_DATA.TrackParam[idx].Status.Existing = True
+                # % the track is not lost
+                TRACK_DATA.TrackParam[idx].Status.Lost = False
+                # % reset the gated counter
+                TRACK_DATA.TrackParam[idx].Quality.GatedCounter = 0
+                # % reset the predicted counter
+                TRACK_DATA.TrackParam[idx].Quality.PredictedCounter = 0
+            elif(TrackInitScore == 2):  # % keep it as 'new' track
+                # % the track is still 'new'
+                TRACK_DATA.TrackParam[idx].Status.New = True
+                # % the track is not existing/stll not confirmed
+                TRACK_DATA.TrackParam[idx].Status.Existing = False
+                # % the track is not lost
+                TRACK_DATA.TrackParam[idx].Status.Lost = False
+            elif(TrackInitScore == 3):  # % tag the track status as 'lost' for deletion
+                # % the track is no more 'new'
+                TRACK_DATA.TrackParam[idx].Status.New = False
+                # % the track is not existing
+                TRACK_DATA.TrackParam[idx].Status.Existing = False
+                # % the track is lost
+                TRACK_DATA.TrackParam[idx].Status.Lost = True
+
+
+# def FORM_NEW_TRACKS_FROM_LOCAL_TRACKS(TRACK_DATA_RAD, TRACK_DATA_CAM, UNGATED_TRACK_INFO):
+#     # % Group ungated local tracks for determination of new fused track
+#     # % INPUTS  : TRACK_DATA_RAD     : data structure corresponding to Track Data from radar sensors
+#     # %         : TRACK_DATA_CAM     : data structure corresponding to Track Data from camera sensors
+#     # %         : UNGATED_TRACK_INFO : Ungated Local Track info (Camera Local Tracks and Radar Local Tracks)
+#     # % OUTPUTS : FUSED_TRACKS   : New Track info for the fused tracks
+#     # %         : nNewTracks     : number of new Tracks
+#     # % ------------------------------------------------------------------------------------------------------------------------
+#     nNewTracks = 0
+#     # % Initialize data structure for New Merged Tracks (Currently these parameters are updated, the remaining parameters shall be updated later)
+#     dim = 4
+#     nRadars = 6
+#     nCameras = 8
+#     nLocalTracks = 100
+#     nFusedTracks = 100
+
+#     UnGatedRadTrackIdx = np.where(
+#         UNGATED_TRACK_INFO.UngatedRadarTracks[0, :TRACK_DATA_RAD.nValidTracks])[0]
+#     UnGatedCamTrackIdx = np.where(
+#         UNGATED_TRACK_INFO.UngatedCameraTracks[0, :TRACK_DATA_CAM.nValidTracks])[0]
+#     nUngatedTracksRAD = len(UnGatedRadTrackIdx)
+#     nUngatedTracksCAM = len(UnGatedCamTrackIdx)
+
+#     @dataclass
+#     class CFUSED_TRACKS:
+#         # % Track kinematics
+#         Xfus = np.zeros((dim, 1))  # % px, vx, py, vy of the fused track
+#         # % noise covariance of the estimated fused track
+#         Pfus = np.zeros((dim, dim))
+#         Xrad = np.zeros((dim, 1))  # % px, vx, py, vy of the radar track
+#         Prad = np.zeros((dim, dim))  # % noise covariance of the radar track
+#         Xcam = np.zeros((dim, 1))  # % px, vx, py, vy of the camera track
+#         Pcam = np.zeros((dim, dim))  # % noise covariance of the camera track
+#         # % Sensor catches
+#         CameraCatch = False  # % is the track estimated from the camera measurements
+#         RadarCatch = False  # % is the track estimated from the radar measurements
+#         RadarCameraCatch = False  # % is the track estimated from Radar & Camera measurements
+#         # % camera sensors that detected the fused track
+#         CameraSource = [0 for i in range(nCameras)]
+#         # % radar sensors that detected the fused track
+#         RadarSource = [0 for i in range(nRadars)]
+#         # % Track Status Parameters
+#         # % is the fused track new (it is new if all the associated local tracks are new)
+#         New = False
+#         Existing = False  # % it is existing if at least one associated local track is 'existing'
+#         Predicted = False  # % it is predicted if all all the associated local tracks are predicted
+#         Gated = False  # % it is gated if atleast one local track is 'gated'
+#         #FUSED_TRACKS = FUSED_TRACKS(ones(1, nFusedTracks));
+
+#     FUSED_TRACKS = [CFUSED_TRACKS() for _ in range(nFusedTracks)]
+
+#     # % if the number of local tracks is '0', then do not execute this function
+#     if((TRACK_DATA_RAD.nValidTracks == 0) and (TRACK_DATA_CAM.nValidTracks == 0)):
+
+#         return FUSED_TRACKS, nNewTracks
+
+#     if((nUngatedTracksRAD == 0) and (nUngatedTracksCAM == 0)):
+#         return FUSED_TRACKS, nNewTracks
+
+#     # % initialization of data structures for algorithm execution
+#     nNewTracks = 0
+#     CameraTrackIDs = np.zeros((1, nLocalTracks), dtype=int)
+#     RadarTrackIDs = np.zeros((1, nLocalTracks), dtype=int)
+#     isCameraTrackGrouped = [0 for _ in range(
+#         nLocalTracks)]
+#     isRadarTrackGrouped = [0 for _ in range(
+#         nLocalTracks)]
+#     X_i = np.zeros((dim, 1))
+#     X_j = np.zeros((dim, 1))
+#     Xfus = np.zeros((dim, 1))
+#     Xrad = np.zeros((dim, 1))
+#     Xcam = np.zeros((dim, 1))
+#     Pfus = np.zeros((dim, dim))
+#     Pspread = np.zeros((dim, dim))
+#     StateParamIndex = [0, 1, 3, 4]
+#     posCovIdx = [0, 3]
+#     velCovIdx = [1, 4]
+#     gammaPos = 10
+#     gammaVel = 10
+
+
+def FORM_NEW_TRACKS_FROM_LOCAL_TRACKS(TRACK_DATA_RAD, TRACK_DATA_CAM, UNGATED_TRACK_INFO):
+    # % Group ungated local tracks for determination of new fused track
+    # % INPUTS  : TRACK_DATA_RAD     : data structure corresponding to Track Data from radar sensors
+    # %         : TRACK_DATA_CAM     : data structure corresponding to Track Data from camera sensors
+    # %         : UNGATED_TRACK_INFO : Ungated Local Track info (Camera Local Tracks and Radar Local Tracks)
+    # % OUTPUTS : FUSED_TRACKS   : New Track info for the fused tracks
+    # %         : nNewTracks     : number of new Tracks
+    # % ------------------------------------------------------------------------------------------------------------------------
+    nNewTracks = 0
+    # % Initialize data structure for New Merged Tracks (Currently these parameters are updated, the remaining parameters shall be updated later)
+    dim = 4
+    nRadars = 6
+    nCameras = 8
+    nLocalTracks = 100
+    nFusedTracks = 100
+
+    UnGatedRadTrackIdx = np.where(
+        UNGATED_TRACK_INFO.UngatedRadarTracks[0, :TRACK_DATA_RAD.nValidTracks])[0]
+    UnGatedCamTrackIdx = np.where(
+        UNGATED_TRACK_INFO.UngatedCameraTracks[0, :TRACK_DATA_CAM.nValidTracks])[0]
+    nUngatedTracksRAD = len(UnGatedRadTrackIdx)
+    nUngatedTracksCAM = len(UnGatedCamTrackIdx)
+
+    @dataclass
+    class CFUSED_TRACKS:
+        # % Track kinematics
+        Xfus = np.zeros((dim, 1))  # % px, vx, py, vy of the fused track
+        # % noise covariance of the estimated fused track
+        Pfus = np.zeros((dim, dim))
+        Xrad = np.zeros((dim, 1))  # % px, vx, py, vy of the radar track
+        Prad = np.zeros((dim, dim))  # % noise covariance of the radar track
+        Xcam = np.zeros((dim, 1))  # % px, vx, py, vy of the camera track
+        Pcam = np.zeros((dim, dim))  # % noise covariance of the camera track
+        # % Sensor catches
+        CameraCatch = False  # % is the track estimated from the camera measurements
+        RadarCatch = False  # % is the track estimated from the radar measurements
+        RadarCameraCatch = False  # % is the track estimated from Radar & Camera measurements
+        # % camera sensors that detected the fused track
+        CameraSource = [0 for i in range(nCameras)]
+        # % radar sensors that detected the fused track
+        RadarSource = [0 for i in range(nRadars)]
+        # % Track Status Parameters
+        # % is the fused track new (it is new if all the associated local tracks are new)
+        New = False
+        Existing = False  # % it is existing if at least one associated local track is 'existing'
+        Predicted = False  # % it is predicted if all all the associated local tracks are predicted
+        Gated = False  # % it is gated if atleast one local track is 'gated'
+        # FUSED_TRACKS = FUSED_TRACKS(ones(1, nFusedTracks));
+
+    FUSED_TRACKS = [CFUSED_TRACKS() for _ in range(nFusedTracks)]
+
+    # % if the number of local tracks is '0', then do not execute this function
+    if((TRACK_DATA_RAD.nValidTracks == 0) and (TRACK_DATA_CAM.nValidTracks == 0)):
+
+        return FUSED_TRACKS, nNewTracks
+
+    if((nUngatedTracksRAD == 0) and (nUngatedTracksCAM == 0)):
+        return FUSED_TRACKS, nNewTracks
+
+    # % initialization of data structures for algorithm execution
+    nNewTracks = 0
+    # putting negative one so that zero will be a valid id.
+    CameraTrackIDs = np.zeros((1, nLocalTracks), dtype=int) + -1
+    RadarTrackIDs = np.zeros((1, nLocalTracks), dtype=int)+-1
+    isCameraTrackGrouped = [0 for _ in range(
+        nLocalTracks)]
+    isRadarTrackGrouped = [0 for _ in range(
+        nLocalTracks)]
+    X_i = np.zeros((dim, 1))
+    X_j = np.zeros((dim, 1))
+    Xfus = np.zeros((dim, 1))
+    Xrad = np.zeros((dim, 1))
+    Xcam = np.zeros((dim, 1))
+    Pfus = np.zeros((dim, dim))
+    Prad = np.zeros((dim, dim))
+    Pcam = np.zeros((dim, dim))
+    Pspread = np.zeros((dim, dim))
+    StateParamIndex = [0, 1, 3, 4]
+    posCovIdx = [0, 3]
+    velCovIdx = [1, 4]
+    gammaPos = 10
+    gammaVel = 10
+
+    # % Start the grouping
+    for ii in range(nUngatedTracksCAM):  # % loop over only the ungated tracks
+        nCamTracks = 0  # % Used later for grouping/merging
+        i = UnGatedCamTrackIdx[ii]
+        if(not isCameraTrackGrouped[i]):
+            isCameraTrackGrouped[i] = True
+            # % Update the Camera Track ID here (Used later for grouping)
+            CameraTrackIDs[0, nCamTracks] = i
+            nCamTracks = nCamTracks + 1
+            # % Track State from Camera Track 'i'
+            X_i[0, 0] = TRACK_DATA_CAM.TrackParam[i].StateEstimate.px
+            X_i[1, 0] = TRACK_DATA_CAM.TrackParam[i].StateEstimate.vx
+            X_i[2, 0] = TRACK_DATA_CAM.TrackParam[i].StateEstimate.py
+            X_i[3, 0] = TRACK_DATA_CAM.TrackParam[i].StateEstimate.vy
+            # %P_i     = TRACK_DATA_CAM.TrackParam[i].StateEstimate.ErrCOV(StateParamIndex,StateParamIndex);
+            P_i_pos = TRACK_DATA_CAM.TrackParam[i].StateEstimate.ErrCOV[:2, :2]
+            P_i_vel = TRACK_DATA_CAM.TrackParam[i].StateEstimate.ErrCOV[:2, :2]
+            # % Find all radar Tracks 'j' which ar[ ]ated with the camera track 'i'
+            nRadTracks = 0
+            for jj in range(nUngatedTracksRAD):
+
+                j = UnGatedRadTrackIdx[jj]
+                if (not isRadarTrackGrouped[j]):
+                    # % Track State from Radar Track 'j'
+                    X_j[0, 0] = TRACK_DATA_RAD.TrackParam[j].StateEstimate.px
+                    X_j[1, 0] = TRACK_DATA_RAD.TrackParam[j].StateEstimate.vx
+                    X_j[2, 0] = TRACK_DATA_RAD.TrackParam[j].StateEstimate.py
+                    X_j[3, 0] = TRACK_DATA_RAD.TrackParam[j].StateEstimate.vy
+                    # THIS IS WRONG
+                    P_j_pos = TRACK_DATA_RAD.TrackParam[j].StateEstimate.ErrCOV[: 2, : 2]
+                    # THIS IS WRONG
+                    P_j_vel = TRACK_DATA_RAD.TrackParam[j].StateEstimate.ErrCOV[: 2, : 2]
+                    # % compute the statistical distance between the Radar Track j and Camera Track i
+                    Xpos = X_i[[0, 2], 0] - X_j[[0, 2], 0]
+                    Xpos = Xpos.reshape(2, 1)
+                    Ppos = P_i_pos + P_j_pos
+                    Xvel = X_i[[1, 3], 0] - X_j[[1, 3], 0]
+                    Xvel = Xvel.reshape(2, 1)
+                    Pvel = P_i_vel + P_j_vel
+                    # %dist = X' * (P\X); % Statistical dist
+                    distPos = Xpos.transpose().dot(np.linalg.inv(
+                        Ppos).dot(Xpos))   # Xpos' * (Ppos\Xpos);
+                    distVel = Xvel.transpose().dot(np.linalg.inv(Pvel).dot(Xvel))  # * (Pvel\Xvel);
+                    if(distPos <= gammaPos and distVel <= gammaVel):
+                        isRadarTrackGrouped[j] = True
+                        # % Update the Radar Track ID here (Used later for grouping)
+                        RadarTrackIDs[0, nRadTracks] = j
+                        nRadTracks = nRadTracks + 1
+
+                # % Find all camera Tracks 'j' which are gated with the camera track 'i'
+            for jj in range((ii+1), nUngatedTracksCAM):
+
+                j = UnGatedCamTrackIdx[0, jj]
+                if(~isCameraTrackGrouped(j)):
+                    # % Track State from Camera Track 'j'
+                    X_j[0, 0] = TRACK_DATA_CAM.TrackParam[j].StateEstimate.px
+                    X_j[1, 0] = TRACK_DATA_CAM.TrackParam[j].StateEstimate.vx
+                    X_j[2, 0] = TRACK_DATA_CAM.TrackParam[j].StateEstimate.py
+                    X_j[3, 0] = TRACK_DATA_CAM.TrackParam[j].StateEstimate.vy
+                    P_j_pos = TRACK_DATA_CAM.TrackParam[j].StateEstimate.ErrCOV[posCovIdx, posCovIdx]
+                    P_j_vel = TRACK_DATA_CAM.TrackParam[j].StateEstimate.ErrCOV[velCovIdx, velCovIdx]
+                    # % compute the statistical distance between the Radar Track j and Camera Track i
+
+                    Xpos = X_i[[0, 2], 0] - X_j[[0, 2], 0]
+                    Xpos = Xpos.reshape(2, 1)
+                    Ppos = P_i_pos + P_j_pos
+                    Xvel = X_i[[1, 3], 0] - X_j[[1, 3], 0]
+                    Xvel = Xvel.reshape(2, 1)
+                    Pvel = P_i_vel + P_j_vel
+
+                    distPos = Xpos.transpose().dot(np.linalg.inv(
+                        Ppos).dot(Xpos))  # Xpos' * (Ppos\Xpos);
+                    distVel = Xvel.transpose().dot(np.linalg.inv(
+                        Pvel).dot(Xvel))  # Xvel' * (Pvel\Xvel);
+                    if (distPos <= gammaPos and distVel <= gammaVel):
+                        isCameraTrackGrouped[j] = True
+                        # % Update the Camera Track ID here (Used later for grouping)
+                        CameraTrackIDs[0, nCamTracks] = j
+                        nCamTracks = nCamTracks + 1
+
+            # % Compute the Track Cluster estimates (This track has either a camera only cluster of both Radar and Camera)
+            Xfus[:] = 0.0
+            Xrad[:] = 0.0
+            Xcam[:] = 0.0
+            Pfus[:] = 0.0
+            Prad[:] = 0.0
+            Pcam[:] = 0.0
+            Pspread[:] = 0.0
+            NewTrack = True
+            ExistingTrack = False
+            GatedTrack = False
+            PredictedTrack = True
+            RadarCatch = False
+            CameraCatch = False
+            CameraSource = False
+            RadarSource = False
+            nLocalTracks = nCamTracks + nRadTracks
+            weight = 1/nLocalTracks
+            # % weighted mean and covariance from camera tracks
+            for idx in range(nCamTracks):
+                index = CameraTrackIDs[0, idx]
+                X_i[0, 0] = TRACK_DATA_CAM.TrackParam[index].StateEstimate.px
+                X_i[1, 0] = TRACK_DATA_CAM.TrackParam[index].StateEstimate.vx
+                X_i[2, 0] = TRACK_DATA_CAM.TrackParam[index].StateEstimate.py
+                X_i[3, 0] = TRACK_DATA_CAM.TrackParam[index].StateEstimate.vy
+                P_i = TRACK_DATA_CAM.TrackParam[index].StateEstimate.ErrCOV[:4, :4]
+                Xfus = Xfus + weight * X_i
+                Pfus = Pfus + weight * P_i
+                Xcam = X_i
+                Pcam = P_i
+                CameraCatch = (
+                    CameraCatch or TRACK_DATA_CAM.TrackParam[index].SensorSource.CameraCatch)
+                CameraSource = (
+                    CameraSource or TRACK_DATA_CAM.TrackParam[index].SensorSource.CameraSource)
+                NewTrack = (
+                    NewTrack and TRACK_DATA_CAM.TrackParam[index].Status.New)
+                ExistingTrack = (
+                    ExistingTrack or TRACK_DATA_CAM.TrackParam[index].Status.Existing)
+                GatedTrack = (
+                    GatedTrack or TRACK_DATA_CAM.TrackParam[index].Status.Gated)
+                PredictedTrack = (
+                    PredictedTrack and TRACK_DATA_CAM.TrackParam[index].Status.Predicted)
+
+            # % weighted mean and covariance from radar tracks
+            for idx in range(nRadTracks):
+                index = RadarTrackIDs[0, idx]
+                X_i[0, 0] = TRACK_DATA_RAD.TrackParam[index].StateEstimate.px
+                X_i[1, 0] = TRACK_DATA_RAD.TrackParam[index].StateEstimate.vx
+                X_i[2, 0] = TRACK_DATA_RAD.TrackParam[index].StateEstimate.py
+                X_i[3, 0] = TRACK_DATA_RAD.TrackParam[index].StateEstimate.vy
+                P_i = TRACK_DATA_RAD.TrackParam[index].StateEstimate.ErrCOV[:4, :4]
+                Xfus = Xfus + weight * X_i
+                Pfus = Pfus + weight * P_i
+                Xrad = X_i
+                Prad = P_i
+                RadarCatch = (RadarCatch or TRACK_DATA_RAD.TrackParam[
+                    index].SensorSource.RadarCatch)
+                RadarSource = (RadarSource or TRACK_DATA_RAD.TrackParam[
+                    index].SensorSource.RadarSource)
+                NewTrack = (
+                    NewTrack and TRACK_DATA_RAD.TrackParam[index].Status.New)
+                ExistingTrack = (
+                    ExistingTrack or TRACK_DATA_RAD.TrackParam[index].Status.Existing)
+                GatedTrack = (
+                    GatedTrack or TRACK_DATA_RAD.TrackParam[index].Status.Gated)
+                PredictedTrack = (
+                    PredictedTrack and TRACK_DATA_RAD.TrackParam[index].Status.Predicted)
+
+            NewTrack = not ExistingTrack
+            RadarCameraCatch = (RadarCatch and CameraCatch)
+            CameraTrackIDs[:] = 0
+            RadarTrackIDs[:] = 0
+            # % reset to 0
+            # I am skipping the pspread that is added to this
+            # % update the Merged Track in the output
+            FUSED_TRACKS[nNewTracks].Xfus = Xfus
+            FUSED_TRACKS[nNewTracks].Xrad = Xrad
+            FUSED_TRACKS[nNewTracks].Xcam = Xcam
+            FUSED_TRACKS[nNewTracks].Pfus = Pfus
+            FUSED_TRACKS[nNewTracks].Prad = Prad
+            FUSED_TRACKS[nNewTracks].Pcam = Pcam
+            FUSED_TRACKS[nNewTracks].CameraCatch = CameraCatch
+            FUSED_TRACKS[nNewTracks].RadarCatch = RadarCatch
+            FUSED_TRACKS[nNewTracks].RadarCameraCatch = RadarCameraCatch
+            FUSED_TRACKS[nNewTracks].CameraSource = CameraSource
+            FUSED_TRACKS[nNewTracks].RadarSource = RadarSource
+            FUSED_TRACKS[nNewTracks].New = NewTrack
+            FUSED_TRACKS[nNewTracks].Existing = ExistingTrack
+            FUSED_TRACKS[nNewTracks].Predicted = PredictedTrack
+            FUSED_TRACKS[nNewTracks].Gated = GatedTrack
+            nNewTracks = nNewTracks + 1
+
+    for ii in range(nUngatedTracksRAD):
+
+        nRadTracks = 0
+        i = UnGatedRadTrackIdx[ii]
+        if(not isRadarTrackGrouped[i]):
+            isRadarTrackGrouped[i] = True
+            RadarTrackIDs[0, nRadTracks] = i
+            nRadTracks = nRadTracks + 1
+            # % Update the Radar Track ID here(Used later for grouping)
+            # % Track State from Radar Track 'i'
+            X_i[0, 0] = TRACK_DATA_RAD.TrackParam[i].StateEstimate.px
+            X_i[1, 0] = TRACK_DATA_RAD.TrackParam[i].StateEstimate.vx
+            X_i[2, 0] = TRACK_DATA_RAD.TrackParam[i].StateEstimate.py
+            X_i[3, 0] = TRACK_DATA_RAD.TrackParam[i].StateEstimate.vy
+
+            P_i_pos = TRACK_DATA_RAD.TrackParam[i].StateEstimate.ErrCOV[:2, :2]
+            P_i_vel = TRACK_DATA_RAD.TrackParam[i].StateEstimate.ErrCOV[:2, :2]
+            for jj in range((ii+1), nUngatedTracksRAD):
+                j = UnGatedRadTrackIdx[0, jj]
+                if(not isRadarTrackGrouped[j]):
+
+                    # % Track State from Radar Track 'j'
+                    X_j[0, 0] = TRACK_DATA_RAD.TrackParam[j].StateEstimate.px
+                    X_j[1, 0] = TRACK_DATA_RAD.TrackParam[j].StateEstimate.vx
+                    X_j[2, 0] = TRACK_DATA_RAD.TrackParam[j].StateEstimate.py
+                    X_j[3, 0] = TRACK_DATA_RAD.TrackParam[j].StateEstimate.vy
+
+                    P_j_pos = TRACK_DATA_RAD.TrackParam[j].StateEstimate.ErrCOV[:2, :2]
+                    P_j_vel = TRACK_DATA_RAD.TrackParam[j].StateEstimate.ErrCOV[:2, :2]
+                    # % compute the statistical distance between the Radar Track j and Camera Track i
+
+                    Xpos = X_i[[0, 2], 0] - X_j[[0, 2], 0]
+                    Xpos = Xpos.reshape(2, 1)
+                    Ppos = P_i_pos + P_j_pos
+
+                    Xvel = X_i[[1, 3], 0] - X_j[[1, 3], 0]
+                    Xvel = Xvel.reshape(2, 1)
+                    Pvel = P_i_vel + P_j_vel
+
+                    distPos = Xpos.transpose().dot(np.linalg.inv(
+                        Ppos).dot(Xpos))  # Xpos' * (Ppos\Xpos);
+                    distVel = Xvel.transpose().dot(np.linalg.inv(
+                        Pvel).dot(Xvel))  # Xvel' * (Pvel\Xvel);
+                    if(distPos <= gammaPos and distVel <= gammaVel):
+
+                        isRadarTrackGrouped[j] = True
+
+                        # % Update the Radar Track ID here (Used later for grouping)
+                        RadarTrackIDs[0, nRadTracks] = j
+                        nRadTracks = nRadTracks + 1
+
+            # % Compute the Track Cluster estimates (This track has Radar only cluster)
+            Xfus[:] = 0.0
+            Xrad[:] = 0.0
+            Pfus[:] = 0.0
+            Prad[:] = 0.0
+            Pcam[:] = 0.0
+            Pspread[:] = 0.0
+            NewTrack = False
+            ExistingTrack = False
+            GatedTrack = False
+            PredictedTrack = False
+            RadarCatch = False
+            CameraCatch = False
+            CameraSource[:] = False
+            RadarSource[:] = False
+            nLocalTracks = nRadTracks
+            weight = 1/nLocalTracks
+
+            for idx in range(nRadTracks):
+                # % weighted mean and covariance from radar tracks
+                index = RadarTrackIDs[0, idx]
+                X_i[0, 0] = TRACK_DATA_RAD.TrackParam[index].StateEstimate.px
+                X_i[1, 0] = TRACK_DATA_RAD.TrackParam[index].StateEstimate.vx
+                X_i[2, 0] = TRACK_DATA_RAD.TrackParam[index].StateEstimate.py
+                X_i[3, 0] = TRACK_DATA_RAD.TrackParam[index].StateEstimate.vy
+                P_i = TRACK_DATA_RAD.TrackParam[index].StateEstimate.ErrCOV[:4, :4]
+                Xfus = Xfus + weight * X_i
+                Pfus = Pfus + weight * P_i
+                Xrad = X_i
+                Prad = P_i
+                RadarCatch = (
+                    RadarCatch or TRACK_DATA_RAD.TrackParam[index].SensorSource.RadarCatch)
+                RadarSource = (
+                    np.any(RadarSource) or np.any(TRACK_DATA_RAD.TrackParam[index].SensorSource.RadarSource))
+                NewTrack = (
+                    NewTrack and TRACK_DATA_RAD.TrackParam[index].Status.New)
+                ExistingTrack = (
+                    ExistingTrack or TRACK_DATA_RAD.TrackParam[index].Status.Existing)
+                GatedTrack = (
+                    GatedTrack or TRACK_DATA_RAD.TrackParam[index].Status.Gated)
+                PredictedTrack = (
+                    PredictedTrack and TRACK_DATA_RAD.TrackParam[index].Status.Predicted)
+
+            NewTrack = not ExistingTrack
+            RadarCameraCatch = (RadarCatch and CameraCatch)
+
+            RadarTrackIDs[:] = 0  # % reset to 0
+            # % update the Merged Track in the output
+            FUSED_TRACKS[nNewTracks].Xfus = Xfus
+            FUSED_TRACKS[nNewTracks].Xrad = Xrad
+            FUSED_TRACKS[nNewTracks].Xcam = Xcam
+            FUSED_TRACKS[nNewTracks].Pfus = Pfus
+            FUSED_TRACKS[nNewTracks].Prad = Prad
+            FUSED_TRACKS[nNewTracks].Pcam = Pcam
+            FUSED_TRACKS[nNewTracks].CameraCatch = CameraCatch
+            FUSED_TRACKS[nNewTracks].RadarCatch = RadarCatch
+            FUSED_TRACKS[nNewTracks].RadarCameraCatch = RadarCameraCatch
+            FUSED_TRACKS[nNewTracks].CameraSource = CameraSource
+            FUSED_TRACKS[nNewTracks].RadarSource = RadarSource
+            FUSED_TRACKS[nNewTracks].New = NewTrack
+            FUSED_TRACKS[nNewTracks].Existing = ExistingTrack
+            FUSED_TRACKS[nNewTracks].Predicted = PredictedTrack
+            FUSED_TRACKS[nNewTracks].Gated = GatedTrack
+            nNewTracks = nNewTracks + 1
+
+    return FUSED_TRACKS, nNewTracks

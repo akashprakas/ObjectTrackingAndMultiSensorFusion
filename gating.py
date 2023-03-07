@@ -54,11 +54,12 @@ def GatingAndLogLikelihood(Z, measmodel, state_pred, P_D, GammaSq):
     elif measDim == 4:
         Ck = np.pi ^ 2/2
 
-    if (mDist <= np.sqrt(GammaSq)):
+    if (mDist <= GammaSq):
         Vk = Ck*np.sqrt(np.linalg.det(GammaSq*S))
         # % - log(numGatedMeas)
         LogLikelihood = np.log(P_D) + np.log(Vk) - 0.5 * \
-            np.log(np.linalg.det(2*np.pi*S)) - 0.5*mDist
+            np.log(np.sqrt(np.linalg.det(2*np.pi*S))) - 0.5 * \
+            mDist   # i have added an additional sqrt for the subtractin term.
         isGated = 1
     else:
         LogLikelihood = INVALID
@@ -217,3 +218,98 @@ def FIND_UNGATED_CLUSTERS(nSnsrMeas, GATED_MEAS_INDEX, CLUSTERS_MEAS, UNASSOCIAT
                     isMeasVisited[val] = True
                 cntMeasClst = cntMeasClst + 1
     return UNASSOCIATED_CLUSTERS, cntMeasClst
+
+
+def GATE_FUSED_TRACK_WITH_LOCAL_TRACKS(TRACK_ESTIMATES_FUS, TRACK_ESTIMATES_RAD, TRACK_ESTIMATES_CAM):
+    # % Gating of fused tracks with the local tracks
+    # % INPUTS : TRACK_ESTIMATES_FUS   : Fused Track predictions
+    # %          TRACK_ESTIMATES_RAD   : Local Track estimates from Radar sensor
+    # %          TRACK_ESTIMATES_CAM   : Local Track estimates from Camera sensor
+    # % OUTPUTS: GATED_TRACK_INFO      : Unassociated clusters updated data structure
+    # %          UNGATED_TRACK_INFO    : number of ungated easurement clusters
+    # % --------------------------------------------------------------------------------------------------------------------------------------------------
+    # % initialize the Gated info
+    maxNumFusedTracks = 100
+    maxNumLocalTracks = 100
+
+    @dataclass
+    class CGATED_TRACK_INFO:
+        nGatedRadarTracks = 0
+        nGatedCameraTracks = 0
+        RadarTracks = np.zeros((1, maxNumLocalTracks), dtype=int)
+        CameraTracks = np.zeros((1, maxNumLocalTracks))
+    GATED_TRACK_INFO = [CGATED_TRACK_INFO() for i in range(maxNumFusedTracks)]
+
+    @dataclass
+    class CUNGATED_TRACK_INFO:
+        UngatedRadarTracks = np.ones((1, maxNumLocalTracks), dtype=int)
+        UngatedCameraTracks = np.ones((1, maxNumLocalTracks), dtype=int)
+    UNGATED_TRACK_INFO = CUNGATED_TRACK_INFO()
+
+    # if the local tracks are available and the fused tracks are also available then execute this function
+    if(((TRACK_ESTIMATES_RAD.nValidTracks == 0) and (TRACK_ESTIMATES_CAM.nValidTracks == 0)) or (TRACK_ESTIMATES_FUS.nValidTracks == 0)):
+        return GATED_TRACK_INFO, UNGATED_TRACK_INFO
+
+    # % init structures
+    GammaSqPos = 16  # %GammaSqVel = 10
+    posCovIdx = [0, 3]
+    velCovIdx = [1, 4]
+
+    @dataclass
+    class FusState:
+        x = np.zeros((2, 1))
+        P = np.zeros((2, 2))
+
+    xFusPos = FusState()
+    xFusVel = FusState()
+    xLocalPos = FusState()
+    xLocalVel = FusState()
+
+    # % create the association matrix for radar local tracks
+    for i in range(TRACK_ESTIMATES_FUS.nValidTracks):
+        nGatedTracksRad = 0
+        nGatedTracksCam = 0
+        nGatedTracksRad = 0
+        nGatedTracksCam = 0
+        xFusPos.x[0, 0] = TRACK_ESTIMATES_FUS.TrackParam[i].StateEstimate.px
+        xFusPos.x[1, 0] = TRACK_ESTIMATES_FUS.TrackParam[i].StateEstimate.py
+        # THIS IS WRONG NEED TO BE CHANGED
+        xFusPos.P = TRACK_ESTIMATES_FUS.TrackParam[i].StateEstimate.ErrCOV[:2, :2]
+        xFusVel.x[0, 0] = TRACK_ESTIMATES_FUS.TrackParam[i].StateEstimate.vx
+        xFusVel.x[1, 0] = TRACK_ESTIMATES_FUS.TrackParam[i].StateEstimate.vy
+        # THIS IS WRONG NEED TO BE CHANGED
+        xFusVel.P = TRACK_ESTIMATES_FUS.TrackParam[i].StateEstimate.ErrCOV[:2, :2]
+
+        for j in range(TRACK_ESTIMATES_RAD.nValidTracks):  # % for each of the radar tracks
+            xLocalPos.x[0, 0] = TRACK_ESTIMATES_RAD.TrackParam[j].StateEstimate.px
+            xLocalPos.x[1, 0] = TRACK_ESTIMATES_RAD.TrackParam[j].StateEstimate.py
+            # THIS IS WRONG NEED TO BE CHANGED
+            xLocalPos.P = TRACK_ESTIMATES_RAD.TrackParam[j].StateEstimate.ErrCOV[:2, :2]
+            xLocalVel.x[0, 0] = TRACK_ESTIMATES_RAD.TrackParam[j].StateEstimate.vx
+            xLocalVel.x[1, 0] = TRACK_ESTIMATES_RAD.TrackParam[j].StateEstimate.vy
+            # THIS IS WRONG NEED TO BE CHANGED
+            xLocalVel.P = TRACK_ESTIMATES_RAD.TrackParam[j].StateEstimate.ErrCOV[:2, :2]
+            dist = np.sqrt((xFusPos.x[0, 0] - xLocalPos.x[0, 0])
+                           ** 2 + (xFusPos.x[1, 0] - xLocalPos.x[1, 0])**2)
+            if(dist <= np.sqrt(GammaSqPos)):  # % if Gated set the gated track info
+                nGatedTracksRad = nGatedTracksRad + 1
+                GATED_TRACK_INFO[i].RadarTracks[0, nGatedTracksRad] = j
+                UNGATED_TRACK_INFO.UngatedRadarTracks[0, j] = False
+
+        for j in range(TRACK_ESTIMATES_CAM.nValidTracks):  # % for each of the camera tracks
+            xLocalPos.x[0, 0] = TRACK_ESTIMATES_CAM.TrackParam[j].StateEstimate.px
+            xLocalPos.x[1, 0] = TRACK_ESTIMATES_CAM.TrackParam[j].StateEstimate.py
+            xLocalPos.P = TRACK_ESTIMATES_CAM.TrackParam[j].StateEstimate.ErrCOV[:2, :2]
+            xLocalVel.x[0, 0] = TRACK_ESTIMATES_CAM.TrackParam[j].StateEstimate.vx
+            xLocalVel.x[1, 0] = TRACK_ESTIMATES_CAM.TrackParam[j].StateEstimate.vy
+            xLocalVel.P = TRACK_ESTIMATES_CAM.TrackParam[j].StateEstimate.ErrCOV[:2, :2]
+            dist = np.sqrt((xFusPos.x[0, 0] - xLocalPos.x[0, 0])
+                           ** 2 + (xFusPos.x[1, 0] - xLocalPos.x[1, 0])**2)
+            if(dist <= np.sqrt(GammaSqPos)):
+                nGatedTracksCam = nGatedTracksCam + 1
+                GATED_TRACK_INFO[i].CameraTracks[0, nGatedTracksCam] = j
+                UNGATED_TRACK_INFO.UngatedCameraTracks[0, j] = False
+
+        # % Update the Gated meas count info
+        GATED_TRACK_INFO[i].nGatedRadarTracks = nGatedTracksRad
+        GATED_TRACK_INFO[i].nGatedCameraTracks = nGatedTracksCam

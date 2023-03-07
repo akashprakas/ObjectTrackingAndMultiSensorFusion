@@ -94,8 +94,8 @@ RAD5_Sensor_Simulated_Data = detectionData[12, 0]
 RAD6_Sensor_Simulated_Data = detectionData[13, 0]
 
 
-for t in range(nTimeSample):
-    print("hello")
+for t in range(200):
+    print("Time ", t)
     RADAR_CAN_BUS = RAD_SENSOR_INTERFACE(RAD1_Sensor_Simulated_Data,
                                          RAD2_Sensor_Simulated_Data,
                                          RAD3_Sensor_Simulated_Data,
@@ -119,14 +119,14 @@ for t in range(nTimeSample):
     RADAR_MEAS_CTS = CTS_SENSOR_FRAME_TO_EGO_FRAME(
         nRadars, nMeas, RadarCALLIBRATIONparam.Extrinsic, RADAR_CAN_BUS, RADAR_MEAS_CTS)
 
-    #SOMETHING WRONG WITH THE CAMERA CTS WHILE MATCHING WITH THE MATLAB ONE, RADAR WAS COMING FINE
+    # SOMETHING WRONG WITH THE CAMERA CTS WHILE MATCHING WITH THE MATLAB ONE, RADAR WAS COMING FINE
     CAMERA_MEAS_CTS = CTS_SENSOR_FRAME_TO_EGO_FRAME(
         nCameras, nMeas, CameraCALLIBRATIONparam.Extrinsic, CAMERA_CAN_BUS, CAMERA_MEAS_CTS)
 
-    RADAR_CLUSTERS, nCounts = findMeanAndVar(
+    RADAR_CLUSTERS, nCountsRadar = findMeanAndVar(
         RADAR_MEAS_CTS, RADAR_CLUSTERS, epsPosDBSCAN=5)
     RADAR_MEAS_CLUSTER = SEGREGATE_CLUSTER(
-        RADAR_MEAS_CTS, RADAR_CLUSTERS, nCounts)
+        RADAR_MEAS_CTS, RADAR_CLUSTERS, nCountsRadar)
 
     # STATE PREDICTION OF RADAR OBJECTS/TRACKS
     # *******************************************************************************
@@ -149,7 +149,7 @@ for t in range(nTimeSample):
         GATED_MEAS_INDEX_RAD, RADAR_MEAS_CTS, GATED_CLUSTER_INDEX_RAD, RADAR_MEAS_CLUSTER, RADAR_CLUSTERS)
 
     UNASSOCIATED_CLUSTERS_RAD, cntRadClst = FIND_UNGATED_CLUSTERS(RADAR_MEAS_CTS.ValidCumulativeMeasCount[-1],
-                                                                  GATED_MEAS_INDEX_RAD, RADAR_CLUSTERS, UNASSOCIATED_CLUSTERS_RAD, nCounts)
+                                                                  GATED_MEAS_INDEX_RAD, RADAR_CLUSTERS, UNASSOCIATED_CLUSTERS_RAD, nCountsRadar)
 
     # RADAR MEASUREMENT , TRACKS  & RADAR SENSOR FUSION
     # *******************************************************************************
@@ -169,5 +169,63 @@ for t in range(nTimeSample):
     TRACK_ESTIMATES_RAD = MAINTAIN_EXISTING_TRACK(TRACK_ESTIMATES_RAD, dT)
 
     TRACK_ESTIMATES_RAD, _ = DELETE_LOST_TRACK(TRACK_ESTIMATES_RAD, TrackParam)
+    print(TRACK_ESTIMATES_RAD.nValidTracks)
 
-    print("hello")
+# =============================================================================================================================================================
+
+    CAMERA_CLUSTERS, nCountsCamera = findMeanAndVarCAM(
+        CAMERA_MEAS_CTS, CAMERA_CLUSTERS, epsPosDBSCAN=5)
+
+    TRACK_ESTIMATES_CAM = EGO_COMPENSATION(
+        TRACK_ESTIMATES_CAM, EGO_CAN_BUS, dT, None)
+
+    TRACK_ESTIMATES_CAM = LINEAR_PROCESS_MODEL(
+        TRACK_ESTIMATES_CAM, MOTION_MODEL_CV)
+
+   # the function is not returning anything because the references are being modified in place
+    GATE_MEASUREMENTS(TRACK_ESTIMATES_CAM, CAMERA_MEAS_CTS, MEAS_MODEL_CV,
+                      CameraCALLIBRATIONparam, GammaSq, MOTION_MODEL_CV, P_G,
+                      ASSOCIATION_MAT_CAMERA, ASSIGNMENT_MAT_CAMERA, GATED_MEAS_INDEX_CAM)
+
+    UNASSOCIATED_CLUSTERS_CAM, cntCamClst = FIND_UNGATED_CLUSTERS(CAMERA_MEAS_CTS.ValidCumulativeMeasCount[-1],
+                                                                  GATED_MEAS_INDEX_CAM, CAMERA_CLUSTERS, UNASSOCIATED_CLUSTERS_CAM, nCountsCamera)
+
+    # ASSOCIATION
+
+    TRACK_ESTIMATES_CAM, FUSION_INFO_CAM = DATA_ASSOCIATION(TRACK_ESTIMATES_CAM, ASSIGNMENT_MAT_CAMERA,
+                                                            CAMERA_MEAS_CTS, MEAS_MODEL_CV, FUSION_INFO_CAM)
+
+    TRACK_ESTIMATES_CAM = HOMOGENEOUS_SENSOR_FUSION_RADARS(
+        TRACK_ESTIMATES_CAM, FUSION_INFO_CAM)
+
+    # LOCAL TRACK MANAGEMENT CAMERA
+
+    TRACK_ESTIMATES_CAM, _ = INIT_NEW_TRACK(
+        CAMERA_CLUSTERS, UNASSOCIATED_CLUSTERS_CAM, cntCamClst, TRACK_ESTIMATES_CAM, dT)
+
+    TRACK_ESTIMATES_CAM = MAINTAIN_EXISTING_TRACK(TRACK_ESTIMATES_CAM, dT)
+
+    TRACK_ESTIMATES_CAM, _ = DELETE_LOST_TRACK(TRACK_ESTIMATES_CAM, TrackParam)
+    print(TRACK_ESTIMATES_CAM.nValidTracks)
+
+    ########################################################## FUSION STUFF  ###############################################################
+
+    # % ------------------------------------------------------ > State Prediction of the object Tracks <----------------------------------------------------------
+    TRACK_ESTIMATES_FUS = EGO_COMPENSATION(
+        TRACK_ESTIMATES_FUS, EGO_CAN_BUS, dT, None)
+    TRACK_ESTIMATES_FUS = LINEAR_PROCESS_MODEL(
+        TRACK_ESTIMATES_FUS, MOTION_MODEL_CV)
+
+    # % ----------------------------------------------> Gating local radar and camera tracks with the fused track <-----------------------------------------------
+    GATED_TRACK_INFO, UNGATED_TRACK_INFO = GATE_FUSED_TRACK_WITH_LOCAL_TRACKS(
+        TRACK_ESTIMATES_FUS, TRACK_ESTIMATES_RAD, TRACK_ESTIMATES_CAM)
+
+    # % ----------------------------------------------------> Sensor Fusion (Heterogeneous,  RADAR + CAMERA) <----------------------------------------------------
+    TRACK_ESTIMATES_FUS = TRACK_FUSION_HETEROGENEOUS_SENSORS(
+        TRACK_ESTIMATES_FUS, TRACK_ESTIMATES_RAD, TRACK_ESTIMATES_CAM, GATED_TRACK_INFO)
+
+    # % ------------------------------------------------> Set New (FUSED) Tracks from the Clustered Local Tracks <------------------------------------------------
+    FUSED_TRACKS, nNewTracks = FORM_NEW_TRACKS_FROM_LOCAL_TRACKS(
+        TRACK_ESTIMATES_RAD, TRACK_ESTIMATES_CAM, UNGATED_TRACK_INFO)
+
+    print("Hloo from FUS ")
