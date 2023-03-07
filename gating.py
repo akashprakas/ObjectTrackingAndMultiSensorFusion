@@ -313,3 +313,5 @@ def GATE_FUSED_TRACK_WITH_LOCAL_TRACKS(TRACK_ESTIMATES_FUS, TRACK_ESTIMATES_RAD,
         # % Update the Gated meas count info
         GATED_TRACK_INFO[i].nGatedRadarTracks = nGatedTracksRad
         GATED_TRACK_INFO[i].nGatedCameraTracks = nGatedTracksCam
+
+    return GATED_TRACK_INFO, UNGATED_TRACK_INFO

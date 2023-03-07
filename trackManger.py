@@ -223,7 +223,7 @@ def SET_NEW_TRACK_INFO(TRACK_DATA_in, FUSED_TRACKS, nNewTracks, dT):
     TRACK_DATA = copy.deepcopy(TRACK_DATA_in)
     # % if no unassociated clusters and valid objects are present then do not set new track
     if(TRACK_DATA.nValidTracks == 0 and nNewTracks == 0):
-        return
+        return TRACK_DATA
 
     StateParamIndex = [0, 1, 3, 4]
     nObjNew = 0
@@ -262,86 +262,39 @@ def SET_NEW_TRACK_INFO(TRACK_DATA_in, FUSED_TRACKS, nNewTracks, dT):
                 # % the track is lost
                 TRACK_DATA.TrackParam[idx].Status.Lost = True
 
+    for idx in range(nNewTracks):  # % iterate over each of the unassocisted Local Tracks
 
-# def FORM_NEW_TRACKS_FROM_LOCAL_TRACKS(TRACK_DATA_RAD, TRACK_DATA_CAM, UNGATED_TRACK_INFO):
-#     # % Group ungated local tracks for determination of new fused track
-#     # % INPUTS  : TRACK_DATA_RAD     : data structure corresponding to Track Data from radar sensors
-#     # %         : TRACK_DATA_CAM     : data structure corresponding to Track Data from camera sensors
-#     # %         : UNGATED_TRACK_INFO : Ungated Local Track info (Camera Local Tracks and Radar Local Tracks)
-#     # % OUTPUTS : FUSED_TRACKS   : New Track info for the fused tracks
-#     # %         : nNewTracks     : number of new Tracks
-#     # % ------------------------------------------------------------------------------------------------------------------------
-#     nNewTracks = 0
-#     # % Initialize data structure for New Merged Tracks (Currently these parameters are updated, the remaining parameters shall be updated later)
-#     dim = 4
-#     nRadars = 6
-#     nCameras = 8
-#     nLocalTracks = 100
-#     nFusedTracks = 100
+        index = objIndex + nObjNew
+        nObjNew = nObjNew + 1
+        # % Choose a new Track ID
+        newId = ChooseNewTrackID(TRACK_DATA)
+        # % assign a new ID to the new Track
+        TRACK_DATA.TrackParam[index].id = newId
+        # % Update the Track Status , sensor catch info , and tracked time
+        TRACK_DATA.TrackParam[index].SensorSource.RadarCatch = FUSED_TRACKS[idx].RadarCatch
+        TRACK_DATA.TrackParam[index].SensorSource.CameraCatch = FUSED_TRACKS[idx].CameraCatch
+        TRACK_DATA.TrackParam[index].SensorSource.RadarSource = FUSED_TRACKS[idx].RadarSource
+        TRACK_DATA.TrackParam[index].SensorSource.CameraSource = FUSED_TRACKS[idx].CameraCatch
+        TRACK_DATA.TrackParam[index].SensorSource.RadarCameraCatch = FUSED_TRACKS[idx].RadarCameraCatch
+        TRACK_DATA.TrackParam[index].Status.New = FUSED_TRACKS[idx].New
+        TRACK_DATA.TrackParam[index].Status.Existing = FUSED_TRACKS[idx].Existing
+        TRACK_DATA.TrackParam[index].Status.Predicted = FUSED_TRACKS[idx].Predicted
+        TRACK_DATA.TrackParam[index].Status.Gated = FUSED_TRACKS[idx].Gated
+        TRACK_DATA.TrackParam[index].Quality.TrackedTime = TRACK_DATA.TrackParam[index].Quality.TrackedTime + dT
+        TRACK_DATA.TrackParam[index].Quality.GatedCounter = TRACK_DATA.TrackParam[index].Quality.GatedCounter + 1
+        # % Update Track Estimates
+        TRACK_DATA.TrackParam[index].StateEstimate.px = FUSED_TRACKS[idx].Xfus[0, 0]
+        TRACK_DATA.TrackParam[index].StateEstimate.vx = FUSED_TRACKS[idx].Xfus[1, 0]
+        TRACK_DATA.TrackParam[index].StateEstimate.py = FUSED_TRACKS[idx].Xfus[2, 0]
+        TRACK_DATA.TrackParam[index].StateEstimate.vy = FUSED_TRACKS[idx].Xfus[3, 0]
+        TRACK_DATA.TrackParam[index].StateEstimate.ax = 0
+        TRACK_DATA.TrackParam[index].StateEstimate.ay = 0
+        TRACK_DATA.TrackParam[index].StateEstimate.ErrCOV[:4,
+                                                          :4] = FUSED_TRACKS[idx].Pfus
 
-#     UnGatedRadTrackIdx = np.where(
-#         UNGATED_TRACK_INFO.UngatedRadarTracks[0, :TRACK_DATA_RAD.nValidTracks])[0]
-#     UnGatedCamTrackIdx = np.where(
-#         UNGATED_TRACK_INFO.UngatedCameraTracks[0, :TRACK_DATA_CAM.nValidTracks])[0]
-#     nUngatedTracksRAD = len(UnGatedRadTrackIdx)
-#     nUngatedTracksCAM = len(UnGatedCamTrackIdx)
+    TRACK_DATA.nValidTracks = TRACK_DATA.nValidTracks + nObjNew
 
-#     @dataclass
-#     class CFUSED_TRACKS:
-#         # % Track kinematics
-#         Xfus = np.zeros((dim, 1))  # % px, vx, py, vy of the fused track
-#         # % noise covariance of the estimated fused track
-#         Pfus = np.zeros((dim, dim))
-#         Xrad = np.zeros((dim, 1))  # % px, vx, py, vy of the radar track
-#         Prad = np.zeros((dim, dim))  # % noise covariance of the radar track
-#         Xcam = np.zeros((dim, 1))  # % px, vx, py, vy of the camera track
-#         Pcam = np.zeros((dim, dim))  # % noise covariance of the camera track
-#         # % Sensor catches
-#         CameraCatch = False  # % is the track estimated from the camera measurements
-#         RadarCatch = False  # % is the track estimated from the radar measurements
-#         RadarCameraCatch = False  # % is the track estimated from Radar & Camera measurements
-#         # % camera sensors that detected the fused track
-#         CameraSource = [0 for i in range(nCameras)]
-#         # % radar sensors that detected the fused track
-#         RadarSource = [0 for i in range(nRadars)]
-#         # % Track Status Parameters
-#         # % is the fused track new (it is new if all the associated local tracks are new)
-#         New = False
-#         Existing = False  # % it is existing if at least one associated local track is 'existing'
-#         Predicted = False  # % it is predicted if all all the associated local tracks are predicted
-#         Gated = False  # % it is gated if atleast one local track is 'gated'
-#         #FUSED_TRACKS = FUSED_TRACKS(ones(1, nFusedTracks));
-
-#     FUSED_TRACKS = [CFUSED_TRACKS() for _ in range(nFusedTracks)]
-
-#     # % if the number of local tracks is '0', then do not execute this function
-#     if((TRACK_DATA_RAD.nValidTracks == 0) and (TRACK_DATA_CAM.nValidTracks == 0)):
-
-#         return FUSED_TRACKS, nNewTracks
-
-#     if((nUngatedTracksRAD == 0) and (nUngatedTracksCAM == 0)):
-#         return FUSED_TRACKS, nNewTracks
-
-#     # % initialization of data structures for algorithm execution
-#     nNewTracks = 0
-#     CameraTrackIDs = np.zeros((1, nLocalTracks), dtype=int)
-#     RadarTrackIDs = np.zeros((1, nLocalTracks), dtype=int)
-#     isCameraTrackGrouped = [0 for _ in range(
-#         nLocalTracks)]
-#     isRadarTrackGrouped = [0 for _ in range(
-#         nLocalTracks)]
-#     X_i = np.zeros((dim, 1))
-#     X_j = np.zeros((dim, 1))
-#     Xfus = np.zeros((dim, 1))
-#     Xrad = np.zeros((dim, 1))
-#     Xcam = np.zeros((dim, 1))
-#     Pfus = np.zeros((dim, dim))
-#     Pspread = np.zeros((dim, dim))
-#     StateParamIndex = [0, 1, 3, 4]
-#     posCovIdx = [0, 3]
-#     velCovIdx = [1, 4]
-#     gammaPos = 10
-#     gammaVel = 10
+    return TRACK_DATA
 
 
 def FORM_NEW_TRACKS_FROM_LOCAL_TRACKS(TRACK_DATA_RAD, TRACK_DATA_CAM, UNGATED_TRACK_INFO):
@@ -582,21 +535,23 @@ def FORM_NEW_TRACKS_FROM_LOCAL_TRACKS(TRACK_DATA_RAD, TRACK_DATA_CAM, UNGATED_TR
             # % reset to 0
             # I am skipping the pspread that is added to this
             # % update the Merged Track in the output
-            FUSED_TRACKS[nNewTracks].Xfus = Xfus
-            FUSED_TRACKS[nNewTracks].Xrad = Xrad
-            FUSED_TRACKS[nNewTracks].Xcam = Xcam
-            FUSED_TRACKS[nNewTracks].Pfus = Pfus
-            FUSED_TRACKS[nNewTracks].Prad = Prad
-            FUSED_TRACKS[nNewTracks].Pcam = Pcam
-            FUSED_TRACKS[nNewTracks].CameraCatch = CameraCatch
-            FUSED_TRACKS[nNewTracks].RadarCatch = RadarCatch
-            FUSED_TRACKS[nNewTracks].RadarCameraCatch = RadarCameraCatch
-            FUSED_TRACKS[nNewTracks].CameraSource = CameraSource
-            FUSED_TRACKS[nNewTracks].RadarSource = RadarSource
-            FUSED_TRACKS[nNewTracks].New = NewTrack
-            FUSED_TRACKS[nNewTracks].Existing = ExistingTrack
-            FUSED_TRACKS[nNewTracks].Predicted = PredictedTrack
-            FUSED_TRACKS[nNewTracks].Gated = GatedTrack
+
+            FUSED_TRACKS[nNewTracks].Xfus = copy.deepcopy(Xfus)
+            FUSED_TRACKS[nNewTracks].Xrad = copy.deepcopy(Xrad)
+            FUSED_TRACKS[nNewTracks].Xcam = copy.deepcopy(Xcam)
+            FUSED_TRACKS[nNewTracks].Pfus = copy.deepcopy(Pfus)
+            FUSED_TRACKS[nNewTracks].Prad = copy.deepcopy(Prad)
+            FUSED_TRACKS[nNewTracks].Pcam = copy.deepcopy(Pcam)
+            FUSED_TRACKS[nNewTracks].CameraCatch = copy.deepcopy(CameraCatch)
+            FUSED_TRACKS[nNewTracks].RadarCatch = copy.deepcopy(RadarCatch)
+            FUSED_TRACKS[nNewTracks].RadarCameraCatch = copy.deepcopy(
+                RadarCameraCatch)
+            FUSED_TRACKS[nNewTracks].CameraSource = copy.deepcopy(CameraSource)
+            FUSED_TRACKS[nNewTracks].RadarSource = copy.deepcopy(RadarSource)
+            FUSED_TRACKS[nNewTracks].New = copy.deepcopy(NewTrack)
+            FUSED_TRACKS[nNewTracks].Existing = copy.deepcopy(ExistingTrack)
+            FUSED_TRACKS[nNewTracks].Predicted = copy.deepcopy(PredictedTrack)
+            FUSED_TRACKS[nNewTracks].Gated = copy.deepcopy(GatedTrack)
             nNewTracks = nNewTracks + 1
 
     for ii in range(nUngatedTracksRAD):
@@ -698,21 +653,22 @@ def FORM_NEW_TRACKS_FROM_LOCAL_TRACKS(TRACK_DATA_RAD, TRACK_DATA_CAM, UNGATED_TR
 
             RadarTrackIDs[:] = 0  # % reset to 0
             # % update the Merged Track in the output
-            FUSED_TRACKS[nNewTracks].Xfus = Xfus
-            FUSED_TRACKS[nNewTracks].Xrad = Xrad
-            FUSED_TRACKS[nNewTracks].Xcam = Xcam
-            FUSED_TRACKS[nNewTracks].Pfus = Pfus
-            FUSED_TRACKS[nNewTracks].Prad = Prad
-            FUSED_TRACKS[nNewTracks].Pcam = Pcam
-            FUSED_TRACKS[nNewTracks].CameraCatch = CameraCatch
-            FUSED_TRACKS[nNewTracks].RadarCatch = RadarCatch
-            FUSED_TRACKS[nNewTracks].RadarCameraCatch = RadarCameraCatch
-            FUSED_TRACKS[nNewTracks].CameraSource = CameraSource
-            FUSED_TRACKS[nNewTracks].RadarSource = RadarSource
-            FUSED_TRACKS[nNewTracks].New = NewTrack
-            FUSED_TRACKS[nNewTracks].Existing = ExistingTrack
-            FUSED_TRACKS[nNewTracks].Predicted = PredictedTrack
-            FUSED_TRACKS[nNewTracks].Gated = GatedTrack
+            FUSED_TRACKS[nNewTracks].Xfus = copy.deepcopy(Xfus)
+            FUSED_TRACKS[nNewTracks].Xrad = copy.deepcopy(Xrad)
+            FUSED_TRACKS[nNewTracks].Xcam = copy.deepcopy(Xcam)
+            FUSED_TRACKS[nNewTracks].Pfus = copy.deepcopy(Pfus)
+            FUSED_TRACKS[nNewTracks].Prad = copy.deepcopy(Prad)
+            FUSED_TRACKS[nNewTracks].Pcam = copy.deepcopy(Pcam)
+            FUSED_TRACKS[nNewTracks].CameraCatch = copy.deepcopy(CameraCatch)
+            FUSED_TRACKS[nNewTracks].RadarCatch = copy.deepcopy(RadarCatch)
+            FUSED_TRACKS[nNewTracks].RadarCameraCatch = copy.deepcopy(
+                RadarCameraCatch)
+            FUSED_TRACKS[nNewTracks].CameraSource = copy.deepcopy(CameraSource)
+            FUSED_TRACKS[nNewTracks].RadarSource = copy.deepcopy(RadarSource)
+            FUSED_TRACKS[nNewTracks].New = copy.deepcopy(NewTrack)
+            FUSED_TRACKS[nNewTracks].Existing = copy.deepcopy(ExistingTrack)
+            FUSED_TRACKS[nNewTracks].Predicted = copy.deepcopy(PredictedTrack)
+            FUSED_TRACKS[nNewTracks].Gated = copy.deepcopy(GatedTrack)
             nNewTracks = nNewTracks + 1
 
     return FUSED_TRACKS, nNewTracks

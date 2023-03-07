@@ -228,4 +228,10 @@ for t in range(200):
     FUSED_TRACKS, nNewTracks = FORM_NEW_TRACKS_FROM_LOCAL_TRACKS(
         TRACK_ESTIMATES_RAD, TRACK_ESTIMATES_CAM, UNGATED_TRACK_INFO)
 
+    # % ----------------------------------------------------------------> FUSED TRACK MANAGEMENT <----------------------------------------------------------------
+    TRACK_ESTIMATES_FUS = SET_NEW_TRACK_INFO(
+        TRACK_ESTIMATES_FUS, FUSED_TRACKS, nNewTracks, dT)
+    TRACK_ESTIMATES_FUS = MAINTAIN_EXISTING_TRACK(
+        TRACK_ESTIMATES_FUS, dT)
+    TRACK_ESTIMATES_FUS, _ = DELETE_LOST_TRACK(TRACK_ESTIMATES_FUS, TrackParam)
     print("Hloo from FUS ")
