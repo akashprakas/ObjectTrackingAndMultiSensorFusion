@@ -395,8 +395,18 @@ def FORM_NEW_TRACKS_FROM_LOCAL_TRACKS(TRACK_DATA_RAD, TRACK_DATA_CAM, UNGATED_TR
             X_i[2, 0] = TRACK_DATA_CAM.TrackParam[i].StateEstimate.py
             X_i[3, 0] = TRACK_DATA_CAM.TrackParam[i].StateEstimate.vy
             # %P_i     = TRACK_DATA_CAM.TrackParam[i].StateEstimate.ErrCOV(StateParamIndex,StateParamIndex);
-            P_i_pos = TRACK_DATA_CAM.TrackParam[i].StateEstimate.ErrCOV[:2, :2]
-            P_i_vel = TRACK_DATA_CAM.TrackParam[i].StateEstimate.ErrCOV[:2, :2]
+
+            # CHECK AND SEE IF THE COVS ARE COMING CORRECTLY
+            P_ = TRACK_DATA_CAM.TrackParam[i].StateEstimate.ErrCOV
+            row1 = P_[[StateParamIndex[0]], posCovIdx]
+            row2 = P_[[StateParamIndex[1]], velCovIdx]
+            row3 = P_[[StateParamIndex[2]], posCovIdx]
+            row4 = P_[[StateParamIndex[3]], velCovIdx]
+
+            P_i_pos = np.array([row1, row3])
+            P_i_vel = np.array([row2, row4])
+            # P_i_pos = TRACK_DATA_CAM.TrackParam[i].StateEstimate.ErrCOV[:2, :2]
+            # P_i_vel = TRACK_DATA_CAM.TrackParam[i].StateEstimate.ErrCOV[:2, :2]
             # % Find all radar Tracks 'j' which ar[ ]ated with the camera track 'i'
             nRadTracks = 0
             for jj in range(nUngatedTracksRAD):
@@ -408,10 +418,16 @@ def FORM_NEW_TRACKS_FROM_LOCAL_TRACKS(TRACK_DATA_RAD, TRACK_DATA_CAM, UNGATED_TR
                     X_j[1, 0] = TRACK_DATA_RAD.TrackParam[j].StateEstimate.vx
                     X_j[2, 0] = TRACK_DATA_RAD.TrackParam[j].StateEstimate.py
                     X_j[3, 0] = TRACK_DATA_RAD.TrackParam[j].StateEstimate.vy
-                    # THIS IS WRONG
-                    P_j_pos = TRACK_DATA_RAD.TrackParam[j].StateEstimate.ErrCOV[: 2, : 2]
-                    # THIS IS WRONG
-                    P_j_vel = TRACK_DATA_RAD.TrackParam[j].StateEstimate.ErrCOV[: 2, : 2]
+
+                    P_ = TRACK_DATA_RAD.TrackParam[i].StateEstimate.ErrCOV
+                    row1 = P_[[StateParamIndex[0]], posCovIdx]
+                    row2 = P_[[StateParamIndex[1]], velCovIdx]
+                    row3 = P_[[StateParamIndex[2]], posCovIdx]
+                    row4 = P_[[StateParamIndex[3]], velCovIdx]
+
+                    P_j_pos = np.array([row1, row3])
+                    P_j_vel = np.array([row2, row4])
+
                     # % compute the statistical distance between the Radar Track j and Camera Track i
                     Xpos = X_i[[0, 2], 0] - X_j[[0, 2], 0]
                     Xpos = Xpos.reshape(2, 1)
@@ -422,8 +438,11 @@ def FORM_NEW_TRACKS_FROM_LOCAL_TRACKS(TRACK_DATA_RAD, TRACK_DATA_CAM, UNGATED_TR
                     # %dist = X' * (P\X); % Statistical dist
                     distPos = Xpos.transpose().dot(np.linalg.inv(
                         Ppos).dot(Xpos))   # Xpos' * (Ppos\Xpos);
+                    distPos = Xpos.transpose().dot(np.linalg.solve(Ppos, Xpos))
+
                     distVel = Xvel.transpose().dot(np.linalg.inv(Pvel).dot(Xvel))  # * (Pvel\Xvel);
-                    if(distPos <= gammaPos and distVel <= gammaVel):
+                    distVel = Xvel.transpose().dot(np.linalg.solve(Pvel, Xvel))
+                    if(abs(distPos) <= gammaPos and abs(distVel) <= gammaVel):
                         isRadarTrackGrouped[j] = True
                         # % Update the Radar Track ID here (Used later for grouping)
                         RadarTrackIDs[0, nRadTracks] = j
@@ -439,8 +458,17 @@ def FORM_NEW_TRACKS_FROM_LOCAL_TRACKS(TRACK_DATA_RAD, TRACK_DATA_CAM, UNGATED_TR
                     X_j[1, 0] = TRACK_DATA_CAM.TrackParam[j].StateEstimate.vx
                     X_j[2, 0] = TRACK_DATA_CAM.TrackParam[j].StateEstimate.py
                     X_j[3, 0] = TRACK_DATA_CAM.TrackParam[j].StateEstimate.vy
-                    P_j_pos = TRACK_DATA_CAM.TrackParam[j].StateEstimate.ErrCOV[posCovIdx, posCovIdx]
-                    P_j_vel = TRACK_DATA_CAM.TrackParam[j].StateEstimate.ErrCOV[velCovIdx, velCovIdx]
+
+                    P_ = TRACK_DATA_CAM.TrackParam[i].StateEstimate.ErrCOV
+                    row1 = P_[[StateParamIndex[0]], posCovIdx]
+                    row2 = P_[[StateParamIndex[1]], velCovIdx]
+                    row3 = P_[[StateParamIndex[2]], posCovIdx]
+                    row4 = P_[[StateParamIndex[3]], velCovIdx]
+
+                    P_j_pos = np.array([row1, row3])
+                    P_j_pos = np.array([row2, row4])
+                    # P_j_pos = TRACK_DATA_CAM.TrackParam[j].StateEstimate.ErrCOV[posCovIdx, posCovIdx]
+                    # P_j_vel = TRACK_DATA_CAM.TrackParam[j].StateEstimate.ErrCOV[velCovIdx, velCovIdx]
                     # % compute the statistical distance between the Radar Track j and Camera Track i
 
                     Xpos = X_i[[0, 2], 0] - X_j[[0, 2], 0]
@@ -454,6 +482,9 @@ def FORM_NEW_TRACKS_FROM_LOCAL_TRACKS(TRACK_DATA_RAD, TRACK_DATA_CAM, UNGATED_TR
                         Ppos).dot(Xpos))  # Xpos' * (Ppos\Xpos);
                     distVel = Xvel.transpose().dot(np.linalg.inv(
                         Pvel).dot(Xvel))  # Xvel' * (Pvel\Xvel);
+
+                    distPos = Xpos.transpose().dot(np.linalg.solve(Ppos, Xpos))
+                    distVel = Xvel.transpose().dot(np.linalg.solve(Pvel, Xvel))
                     if (distPos <= gammaPos and distVel <= gammaVel):
                         isCameraTrackGrouped[j] = True
                         # % Update the Camera Track ID here (Used later for grouping)
@@ -485,11 +516,19 @@ def FORM_NEW_TRACKS_FROM_LOCAL_TRACKS(TRACK_DATA_RAD, TRACK_DATA_CAM, UNGATED_TR
                 X_i[1, 0] = TRACK_DATA_CAM.TrackParam[index].StateEstimate.vx
                 X_i[2, 0] = TRACK_DATA_CAM.TrackParam[index].StateEstimate.py
                 X_i[3, 0] = TRACK_DATA_CAM.TrackParam[index].StateEstimate.vy
-                P_i = TRACK_DATA_CAM.TrackParam[index].StateEstimate.ErrCOV[:4, :4]
+
+                P_ = TRACK_DATA_CAM.TrackParam[i].StateEstimate.ErrCOV
+                row1 = P_[[StateParamIndex[0]], StateParamIndex]
+                row2 = P_[[StateParamIndex[1]], StateParamIndex]
+                row3 = P_[[StateParamIndex[2]], StateParamIndex]
+                row4 = P_[[StateParamIndex[3]], StateParamIndex]
+
+                P_i = np.array([row1, row2, row3, row4])
+                # P_i = TRACK_DATA_CAM.TrackParam[index].StateEstimate.ErrCOV[:4, :4]
                 Xfus = Xfus + weight * X_i
                 Pfus = Pfus + weight * P_i
-                Xcam = X_i
-                Pcam = P_i
+                Xcam = copy.deepcopy(X_i)
+                Pcam = copy.deepcopy(P_i)
                 CameraCatch = (
                     CameraCatch or TRACK_DATA_CAM.TrackParam[index].SensorSource.CameraCatch)
                 CameraSource = (
@@ -510,11 +549,18 @@ def FORM_NEW_TRACKS_FROM_LOCAL_TRACKS(TRACK_DATA_RAD, TRACK_DATA_CAM, UNGATED_TR
                 X_i[1, 0] = TRACK_DATA_RAD.TrackParam[index].StateEstimate.vx
                 X_i[2, 0] = TRACK_DATA_RAD.TrackParam[index].StateEstimate.py
                 X_i[3, 0] = TRACK_DATA_RAD.TrackParam[index].StateEstimate.vy
-                P_i = TRACK_DATA_RAD.TrackParam[index].StateEstimate.ErrCOV[:4, :4]
+                P_ =        TRACK_DATA_RAD.TrackParam[i].StateEstimate.ErrCOV
+                row1 = P_[[StateParamIndex[0]], StateParamIndex]
+                row2 = P_[[StateParamIndex[1]], StateParamIndex]
+                row3 = P_[[StateParamIndex[2]], StateParamIndex]
+                row4 = P_[[StateParamIndex[3]], StateParamIndex]
+
+                P_i = np.array([row1, row2, row3, row4])
+                # P_i = TRACK_DATA_RAD.TrackParam[index].StateEstimate.ErrCOV[:4, :4]
                 Xfus = Xfus + weight * X_i
                 Pfus = Pfus + weight * P_i
-                Xrad = X_i
-                Prad = P_i
+                Xrad = copy.deepcopy(X_i)
+                Prad = copy.deepcopy(P_i)
                 RadarCatch = (RadarCatch or TRACK_DATA_RAD.TrackParam[
                     index].SensorSource.RadarCatch)
                 RadarSource = (RadarSource or TRACK_DATA_RAD.TrackParam[
@@ -569,8 +615,17 @@ def FORM_NEW_TRACKS_FROM_LOCAL_TRACKS(TRACK_DATA_RAD, TRACK_DATA_CAM, UNGATED_TR
             X_i[2, 0] = TRACK_DATA_RAD.TrackParam[i].StateEstimate.py
             X_i[3, 0] = TRACK_DATA_RAD.TrackParam[i].StateEstimate.vy
 
-            P_i_pos = TRACK_DATA_RAD.TrackParam[i].StateEstimate.ErrCOV[:2, :2]
-            P_i_vel = TRACK_DATA_RAD.TrackParam[i].StateEstimate.ErrCOV[:2, :2]
+            P_ = TRACK_DATA_RAD.TrackParam[i].StateEstimate.ErrCOV
+            row1 = P_[[StateParamIndex[0]], posCovIdx]
+            row2 = P_[[StateParamIndex[1]], velCovIdx]
+            row3 = P_[[StateParamIndex[2]], posCovIdx]
+            row4 = P_[[StateParamIndex[3]], velCovIdx]
+
+            P_i_pos = np.array([row1, row3])
+            P_i_vel = np.array([row2, row3])
+
+            # P_i_pos = TRACK_DATA_RAD.TrackParam[i].StateEstimate.ErrCOV[:2, :2]
+            # P_i_vel = TRACK_DATA_RAD.TrackParam[i].StateEstimate.ErrCOV[:2, :2]
             for jj in range((ii+1), nUngatedTracksRAD):
                 j = UnGatedRadTrackIdx[0, jj]
                 if(not isRadarTrackGrouped[j]):
@@ -630,11 +685,18 @@ def FORM_NEW_TRACKS_FROM_LOCAL_TRACKS(TRACK_DATA_RAD, TRACK_DATA_CAM, UNGATED_TR
                 X_i[1, 0] = TRACK_DATA_RAD.TrackParam[index].StateEstimate.vx
                 X_i[2, 0] = TRACK_DATA_RAD.TrackParam[index].StateEstimate.py
                 X_i[3, 0] = TRACK_DATA_RAD.TrackParam[index].StateEstimate.vy
-                P_i = TRACK_DATA_RAD.TrackParam[index].StateEstimate.ErrCOV[:4, :4]
+                P_ = TRACK_DATA_RAD.TrackParam[i].StateEstimate.ErrCOV
+                row1 = P_[[StateParamIndex[0]], StateParamIndex]
+                row2 = P_[[StateParamIndex[1]], StateParamIndex]
+                row3 = P_[[StateParamIndex[2]], StateParamIndex]
+                row4 = P_[[StateParamIndex[3]], StateParamIndex]
+
+                P_i = np.array([row1, row2, row3, row4])
+                # P_i = TRACK_DATA_RAD.TrackParam[index].StateEstimate.ErrCOV[:4, :4]
                 Xfus = Xfus + weight * X_i
                 Pfus = Pfus + weight * P_i
-                Xrad = X_i
-                Prad = P_i
+                Xrad = copy.deepcopy(X_i)
+                Prad = copy.deepcopy(P_i)
                 RadarCatch = (
                     RadarCatch or TRACK_DATA_RAD.TrackParam[index].SensorSource.RadarCatch)
                 RadarSource = (

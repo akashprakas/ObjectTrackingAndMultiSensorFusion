@@ -308,21 +308,22 @@ def CovarianceIntersection(Xr, W):
     # % --------------------------------------------------------------------------------------------------------------
 
     if(len(W) == 1):
-        X = Xr[0, 0].x
-        P = Xr[0, 0].P
+        X = Xr[0].x
+        P = Xr[0].P
         return X, P
 
-    dim = Xr.shape[1]
+    dim = len(Xr[0])
     Pavginv = 0
     temp = 0
     I = np.eye(dim)
     # NOTE EVERYTHING BELOW IS WRONG AND NEED TO BE RECALCULATED
     for i in range(len(W)):
-        Pavginv = Pavginv + W[0, i] * ((Xr[0, i].P).dot(I))
-        temp = temp + W[0, i] * ((Xr[0, i].P).dot(Xr[0, i].x))
+        Pavginv = Pavginv + W[i]*np.linalg.solve(Xr[i].P, np.eye(4))
+        temp = temp + W[i] * np.linalg.solve(Xr[i].P, np.eye(4)).dot(Xr[i].x)
 
-    P = Pavginv
+    P = np.linalg.solve(Pavginv, np.eye(4))
     X = P*temp
+    return X, P
 
 
 def TRACK_FUSION_HETEROGENEOUS_SENSORS(TRACK_ESTIMATES_FUS_in, TRACK_ESTIMATES_RAD, TRACK_ESTIMATES_CAM, GATED_TRACK_INFO):
@@ -352,7 +353,7 @@ def TRACK_FUSION_HETEROGENEOUS_SENSORS(TRACK_ESTIMATES_FUS_in, TRACK_ESTIMATES_R
         x = np.zeros((dim, 1))
         P = np.zeros((dim, dim))
 
-    XTracks = [CXTracks() for _ in nLocalTracks]
+    XTracks = [CXTracks() for _ in range(nLocalTracks)]
     weights = np.zeros((1, dim))
     CameraSource = 0
     RadarSource = 0
@@ -374,7 +375,7 @@ def TRACK_FUSION_HETEROGENEOUS_SENSORS(TRACK_ESTIMATES_FUS_in, TRACK_ESTIMATES_R
         RadarSource = False
         for i in range(nRadGatedTracks):
 
-            j = GATED_TRACK_INFO(idx).RadarTracks(1, i)
+            j = int(GATED_TRACK_INFO[idx].RadarTracks[0, i])
             XTracks[count].x[0,
                              0] = TRACK_ESTIMATES_RAD.TrackParam[j].StateEstimate.px
             XTracks[count].x[1,
@@ -383,12 +384,21 @@ def TRACK_FUSION_HETEROGENEOUS_SENSORS(TRACK_ESTIMATES_FUS_in, TRACK_ESTIMATES_R
                              0] = TRACK_ESTIMATES_RAD.TrackParam[j].StateEstimate.py
             XTracks[count].x[3,
                              0] = TRACK_ESTIMATES_RAD.TrackParam[j].StateEstimate.vy
-            XTracks[count].P = TRACK_ESTIMATES_RAD.TrackParam[j].StateEstimate.ErrCOV[:4, :4]
+
+            P_ = TRACK_ESTIMATES_RAD.TrackParam[j].StateEstimate.ErrCOV
+            row1 = P_[[StateCovIndex[0]], StateCovIndex]
+            row2 = P_[[StateCovIndex[1]], StateCovIndex]
+            row3 = P_[[StateCovIndex[2]], StateCovIndex]
+            row4 = P_[[StateCovIndex[3]], StateCovIndex]
+
+            # P_i = np.array([row1, row2, row3, row4])
+
+            XTracks[count].P = np.array([row1, row2, row3, row4])
             # % updat varios flags here
             RadarCatch = (
                 RadarCatch or TRACK_ESTIMATES_RAD.TrackParam[j].SensorSource.RadarCatch)
             RadarSource = (
-                RadarSource or TRACK_ESTIMATES_RAD.TrackParam[j].SensorSource.RadarSource)
+                np.any(RadarSource) or np.any(TRACK_ESTIMATES_RAD.TrackParam[j].SensorSource.RadarSource))
             GatedTrack = (
                 GatedTrack or TRACK_ESTIMATES_RAD.TrackParam[j].Status.Gated)
             PredictedTrack = (
@@ -396,23 +406,21 @@ def TRACK_FUSION_HETEROGENEOUS_SENSORS(TRACK_ESTIMATES_FUS_in, TRACK_ESTIMATES_R
             count = count + 1
 
         for i in range(nCamGatedTracks):
-
-            j = GATED_TRACK_INFO(idx).CameraTracks(1, i)
-            XTracks[count].x[0, 1] = TRACK_ESTIMATES_CAM.TrackParam(
-                1, j).StateEstimate.px
-            XTracks[count].x[1, 1] = TRACK_ESTIMATES_CAM.TrackParam(
-                1, j).StateEstimate.vx
-            XTracks[count].x[2, 1] = TRACK_ESTIMATES_CAM.TrackParam(
-                1, j).StateEstimate.py
-            XTracks[count].x[3, 1] = TRACK_ESTIMATES_CAM.TrackParam(
-                1, j).StateEstimate.vy
-            XTracks[count].P = TRACK_ESTIMATES_CAM.TrackParam(
-                1, j).StateEstimate.ErrCOV[:4, :4]
+            j = int(GATED_TRACK_INFO[idx].CameraTracks[0, i])
+            XTracks[count].x[0,
+                             0] = TRACK_ESTIMATES_CAM.TrackParam[j].StateEstimate.px
+            XTracks[count].x[1,
+                             0] = TRACK_ESTIMATES_CAM.TrackParam[j].StateEstimate.vx
+            XTracks[count].x[2,
+                             0] = TRACK_ESTIMATES_CAM.TrackParam[j].StateEstimate.py
+            XTracks[count].x[3,
+                             0] = TRACK_ESTIMATES_CAM.TrackParam[j].StateEstimate.vy
+            XTracks[count].P = TRACK_ESTIMATES_CAM.TrackParam[j].StateEstimate.ErrCOV[:4, :4]
             # % update various flags here
             CameraCatch = (
                 CameraCatch or TRACK_ESTIMATES_CAM.TrackParam[j].SensorSource.CameraCatch)
             CameraSource = (
-                CameraSource or TRACK_ESTIMATES_CAM.TrackParam[j].SensorSource.CameraSource)
+                np.any(CameraSource) or np.any(TRACK_ESTIMATES_CAM.TrackParam[j].SensorSource.CameraSource))
             GatedTrack = (
                 GatedTrack or TRACK_ESTIMATES_CAM.TrackParam[j].Status.Gated)
             PredictedTrack = (
@@ -431,14 +439,21 @@ def TRACK_FUSION_HETEROGENEOUS_SENSORS(TRACK_ESTIMATES_FUS_in, TRACK_ESTIMATES_R
 
         elif(nGatedTracks > 0):  # % else track fusion
             # % assign equal weights to all local sensor estimates
-            weights[0, 1:count] = 1/nGatedTracks
+            weights[0, 0:count] = 1/nGatedTracks
             Xfus, Pfus = CovarianceIntersection(
-                XTracks[0, 0:count], weights[0, 1:count])
-            TRACK_ESTIMATES_FUS.TrackParam[idx].StateEstimate.px = Xfus(1, 1)
-            TRACK_ESTIMATES_FUS.TrackParam[idx].StateEstimate.vx = Xfus(2, 1)
-            TRACK_ESTIMATES_FUS.TrackParam[idx].StateEstimate.py = Xfus(3, 1)
-            TRACK_ESTIMATES_FUS.TrackParam[idx].StateEstimate.vy = Xfus(4, 1)
-            TRACK_ESTIMATES_FUS.TrackParam[idx].StateEstimate.ErrCOV[:4, :4] = Pfus
+                XTracks[:count], weights[0, 0:count])
+            TRACK_ESTIMATES_FUS.TrackParam[idx].StateEstimate.px = Xfus[1, 0]
+            TRACK_ESTIMATES_FUS.TrackParam[idx].StateEstimate.vx = Xfus[2, 0]
+            TRACK_ESTIMATES_FUS.TrackParam[idx].StateEstimate.py = Xfus[3, 0]
+            TRACK_ESTIMATES_FUS.TrackParam[idx].StateEstimate.vy = Xfus[4, 0]
+            #TRACK_ESTIMATES_FUS.TrackParam[idx].StateEstimate.ErrCOV[:4, :4] = Pfus
+
+            P_ = TRACK_ESTIMATES_FUS.TrackParam[idx].StateEstimate.ErrCOV
+            P_[[StateCovIndex[0]], StateCovIndex] = Pfus[0]
+            P_[[StateCovIndex[1]], StateCovIndex] = Pfus[1]
+            P_[[StateCovIndex[2]], StateCovIndex] = Pfus[2]
+            P_[[StateCovIndex[3]], StateCovIndex] = Pfus[3]
+
             RadarCameraCatch = (RadarCatch and CameraCatch)
             # % update various counters here
             TRACK_ESTIMATES_FUS.TrackParam[idx].SensorSource.CameraCatch = CameraCatch
