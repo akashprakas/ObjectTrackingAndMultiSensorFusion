@@ -94,7 +94,7 @@ RAD5_Sensor_Simulated_Data = detectionData[12, 0]
 RAD6_Sensor_Simulated_Data = detectionData[13, 0]
 
 
-for t in range(200):
+for t in range(150):
     print("Time ", t)
     RADAR_CAN_BUS = RAD_SENSOR_INTERFACE(RAD1_Sensor_Simulated_Data,
                                          RAD2_Sensor_Simulated_Data,
@@ -169,7 +169,7 @@ for t in range(200):
     TRACK_ESTIMATES_RAD = MAINTAIN_EXISTING_TRACK(TRACK_ESTIMATES_RAD, dT)
 
     TRACK_ESTIMATES_RAD, _ = DELETE_LOST_TRACK(TRACK_ESTIMATES_RAD, TrackParam)
-    print(TRACK_ESTIMATES_RAD.nValidTracks)
+    print("Number of radar tracks", TRACK_ESTIMATES_RAD.nValidTracks)
 
 # =============================================================================================================================================================
 
@@ -206,7 +206,7 @@ for t in range(200):
     TRACK_ESTIMATES_CAM = MAINTAIN_EXISTING_TRACK(TRACK_ESTIMATES_CAM, dT)
 
     TRACK_ESTIMATES_CAM, _ = DELETE_LOST_TRACK(TRACK_ESTIMATES_CAM, TrackParam)
-    print(TRACK_ESTIMATES_CAM.nValidTracks)
+    print("Number of camera tracks ", TRACK_ESTIMATES_CAM.nValidTracks)
 
     ########################################################## FUSION STUFF  ###############################################################
 
@@ -234,4 +234,4 @@ for t in range(200):
     TRACK_ESTIMATES_FUS = MAINTAIN_EXISTING_TRACK(
         TRACK_ESTIMATES_FUS, dT)
     TRACK_ESTIMATES_FUS, _ = DELETE_LOST_TRACK(TRACK_ESTIMATES_FUS, TrackParam)
-    print("Hloo from FUS ")
+    print("Number of fused tracks  ", TRACK_ESTIMATES_FUS.nValidTracks)

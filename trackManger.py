@@ -33,7 +33,7 @@ def ComputeTrackInitScore(TRACK_DATA, idx, dT, alpha1, alpha2):
     elif(St > alpha2):
         TrackInitScore = 3  # % track is Lost
 
-    return TrackInitScore
+    return TrackInitScore,TRACK_DATA
 
 
 def ChooseNewTrackID(TRACK_DATA):
@@ -323,30 +323,39 @@ def FORM_NEW_TRACKS_FROM_LOCAL_TRACKS(TRACK_DATA_RAD, TRACK_DATA_CAM, UNGATED_TR
     @dataclass
     class CFUSED_TRACKS:
         # % Track kinematics
-        Xfus = np.zeros((dim, 1))  # % px, vx, py, vy of the fused track
+        # % px, vx, py, vy of the fused track
+        Xfus: np.array = np.zeros((dim, 1))
         # % noise covariance of the estimated fused track
-        Pfus = np.zeros((dim, dim))
-        Xrad = np.zeros((dim, 1))  # % px, vx, py, vy of the radar track
-        Prad = np.zeros((dim, dim))  # % noise covariance of the radar track
-        Xcam = np.zeros((dim, 1))  # % px, vx, py, vy of the camera track
-        Pcam = np.zeros((dim, dim))  # % noise covariance of the camera track
+        Pfus: np.array = np.zeros((dim, dim))
+        # % px, vx, py, vy of the radar track
+        Xrad: np.array = np.zeros((dim, 1))
+        # % noise covariance of the radar track
+        Prad: np.array = np.zeros((dim, dim))
+        # % px, vx, py, vy of the camera track
+        Xcam: np.array = np.zeros((dim, 1))
+        # % noise covariance of the camera track
+        Pcam: np.array = np.zeros((dim, dim))
         # % Sensor catches
-        CameraCatch = False  # % is the track estimated from the camera measurements
-        RadarCatch = False  # % is the track estimated from the radar measurements
-        RadarCameraCatch = False  # % is the track estimated from Radar & Camera measurements
+        CameraCatch: bool = False  # % is the track estimated from the camera measurements
+        RadarCatch: bool = False  # % is the track estimated from the radar measurements
+        # % is the track estimated from Radar & Camera measurements
+        RadarCameraCatch: bool = False
         # % camera sensors that detected the fused track
-        CameraSource = [0 for i in range(nCameras)]
+        CameraSource: np.array = np.zeros((nCameras, 1),dtype= int)
         # % radar sensors that detected the fused track
-        RadarSource = [0 for i in range(nRadars)]
+        RadarSource: np.array = np.zeros((nRadars, 1),dtype=int)
         # % Track Status Parameters
         # % is the fused track new (it is new if all the associated local tracks are new)
-        New = False
-        Existing = False  # % it is existing if at least one associated local track is 'existing'
-        Predicted = False  # % it is predicted if all all the associated local tracks are predicted
-        Gated = False  # % it is gated if atleast one local track is 'gated'
+        New: bool = False
+        # % it is existing if at least one associated local track is 'existing'
+        Existing: bool = False
+        # % it is predicted if all all the associated local tracks are predicted
+        Predicted: bool = False
+        Gated: bool = False  # % it is gated if atleast one local track is 'gated'
         # FUSED_TRACKS = FUSED_TRACKS(ones(1, nFusedTracks));
 
-    FUSED_TRACKS = [CFUSED_TRACKS() for _ in range(nFusedTracks)]
+    FUSED_TRACKS = [copy.deepcopy(CFUSED_TRACKS())
+                    for _ in range(nFusedTracks)]
 
     # % if the number of local tracks is '0', then do not execute this function
     if((TRACK_DATA_RAD.nValidTracks == 0) and (TRACK_DATA_CAM.nValidTracks == 0)):
@@ -549,7 +558,7 @@ def FORM_NEW_TRACKS_FROM_LOCAL_TRACKS(TRACK_DATA_RAD, TRACK_DATA_CAM, UNGATED_TR
                 X_i[1, 0] = TRACK_DATA_RAD.TrackParam[index].StateEstimate.vx
                 X_i[2, 0] = TRACK_DATA_RAD.TrackParam[index].StateEstimate.py
                 X_i[3, 0] = TRACK_DATA_RAD.TrackParam[index].StateEstimate.vy
-                P_ =        TRACK_DATA_RAD.TrackParam[i].StateEstimate.ErrCOV
+                P_ = TRACK_DATA_RAD.TrackParam[i].StateEstimate.ErrCOV
                 row1 = P_[[StateParamIndex[0]], StateParamIndex]
                 row2 = P_[[StateParamIndex[1]], StateParamIndex]
                 row3 = P_[[StateParamIndex[2]], StateParamIndex]

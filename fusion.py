@@ -1,3 +1,6 @@
+from numpy.linalg import inv, det
+from scipy.optimize import fminbound
+from enum import Enum
 import numpy as np
 from dataclasses import dataclass
 import copy
@@ -297,7 +300,33 @@ def HOMOGENEOUS_SENSOR_FUSION_RADARS(TRACK_DATA_in, FUSION_INFO_RAD):
     return TRACK_DATA
 
 
-def CovarianceIntersection(Xr, W):
+class PerformanceCriterion(Enum):
+    TRACE = 1,
+    DETERMINANT = 2
+
+
+class CovarianceIntersection(object):
+    def __init__(self, performance_criterion=PerformanceCriterion.TRACE):
+        self.performance_criterion = det if performance_criterion == PerformanceCriterion.DETERMINANT else np.trace
+        self.algorithm_name = "Covariance Intersection"
+        self.algorithm_abbreviation = "CI"
+
+    def fuse(self, mean_a, cov_a, mean_b, cov_b):
+        omega = self.optimize_omega(cov_a, cov_b)
+        cov = inv(np.multiply(omega, inv(cov_a)) +
+                  np.multiply(1 - omega, inv(cov_b)))
+        mean = np.dot(cov, (np.dot(np.multiply(omega, inv(cov_a)), mean_a) +
+                      np.dot(np.multiply(1 - omega, inv(cov_b)), mean_b)))
+        return mean, cov
+
+    def optimize_omega(self, cov_a, cov_b):
+        def optimize_fn(omega):
+            return self.performance_criterion(inv(np.multiply(omega, inv(cov_a)) + np.multiply(1 - omega, inv(cov_b))))
+        return fminbound(optimize_fn, 0, 1)
+        # return 0.5
+
+
+def CCovarianceIntersection(Xr, W):
     # % Fusion of Gaussian Distributions by Covarience Intersection method
     # % INPUT : W  : normalised weight of Gaussian components (row vector : 1 x N )
     # %       : Xr : structure array of size (1 x N), each structure has two fields
@@ -312,18 +341,18 @@ def CovarianceIntersection(Xr, W):
         P = Xr[0].P
         return X, P
 
-    dim = len(Xr[0])
-    Pavginv = 0
-    temp = 0
-    I = np.eye(dim)
+    dim = Xr[0].x.shape[0]
+    mean = 0
+    cov = 0
+    COV = CovarianceIntersection()
+    # I = np.eye(dim)
     # NOTE EVERYTHING BELOW IS WRONG AND NEED TO BE RECALCULATED
-    for i in range(len(W)):
-        Pavginv = Pavginv + W[i]*np.linalg.solve(Xr[i].P, np.eye(4))
-        temp = temp + W[i] * np.linalg.solve(Xr[i].P, np.eye(4)).dot(Xr[i].x)
+    mean, cov = COV.fuse(Xr[0].x, Xr[0].P, Xr[1].x, Xr[1].P)
+    if (len(W) > 2):
+        for i in range(2, len(W)):
+            mean, cov = COV.fuse(mean, cov, Xr[i].x, Xr[i].P)
 
-    P = np.linalg.solve(Pavginv, np.eye(4))
-    X = P*temp
-    return X, P
+    return mean, cov
 
 
 def TRACK_FUSION_HETEROGENEOUS_SENSORS(TRACK_ESTIMATES_FUS_in, TRACK_ESTIMATES_RAD, TRACK_ESTIMATES_CAM, GATED_TRACK_INFO):
@@ -347,13 +376,29 @@ def TRACK_FUSION_HETEROGENEOUS_SENSORS(TRACK_ESTIMATES_FUS_in, TRACK_ESTIMATES_R
     nLocalTracks = nLocalTracksCam + nLocalTracksRad
     dim = 4
 
+    def elementWiseOr(a, b):
+
+        if len(a) == 0:
+            return b
+        outList = []
+        for i in range(b.shape[0]):
+            try:
+
+                outList.append(a[i][0] or b[i][0])
+            except:
+                outList.append(b[i][0])
+
+        out = np.array(outList).reshape(b.shape[0], -1)
+
+        return out
+
     @dataclass
     class CXTracks:
 
-        x = np.zeros((dim, 1))
-        P = np.zeros((dim, dim))
+        x: np.array = np.zeros((dim, 1))
+        P: np.array = np.zeros((dim, dim))
 
-    XTracks = [CXTracks() for _ in range(nLocalTracks)]
+    XTracks = [copy.deepcopy(CXTracks()) for _ in range(nLocalTracks)]
     weights = np.zeros((1, dim))
     CameraSource = 0
     RadarSource = 0
@@ -371,8 +416,8 @@ def TRACK_FUSION_HETEROGENEOUS_SENSORS(TRACK_ESTIMATES_FUS_in, TRACK_ESTIMATES_R
         PredictedTrack = True
         RadarCatch = False
         CameraCatch = False
-        CameraSource = False
-        RadarSource = False
+        CameraSource = []
+        RadarSource = []
         for i in range(nRadGatedTracks):
 
             j = int(GATED_TRACK_INFO[idx].RadarTracks[0, i])
@@ -390,15 +435,17 @@ def TRACK_FUSION_HETEROGENEOUS_SENSORS(TRACK_ESTIMATES_FUS_in, TRACK_ESTIMATES_R
             row2 = P_[[StateCovIndex[1]], StateCovIndex]
             row3 = P_[[StateCovIndex[2]], StateCovIndex]
             row4 = P_[[StateCovIndex[3]], StateCovIndex]
+            XTracks[count].P = copy.deepcopy(
+                np.array([row1, row2, row3, row4]))
 
-            # P_i = np.array([row1, row2, row3, row4])
-
-            XTracks[count].P = np.array([row1, row2, row3, row4])
             # % updat varios flags here
             RadarCatch = (
                 RadarCatch or TRACK_ESTIMATES_RAD.TrackParam[j].SensorSource.RadarCatch)
-            RadarSource = (
-                np.any(RadarSource) or np.any(TRACK_ESTIMATES_RAD.TrackParam[j].SensorSource.RadarSource))
+
+            RadarSource = elementWiseOr(
+                RadarSource, TRACK_ESTIMATES_RAD.TrackParam[j].SensorSource.RadarSource)
+            # RadarSource = (
+            # np.any(RadarSource) or np.any(TRACK_ESTIMATES_RAD.TrackParam[j].SensorSource.RadarSource))
             GatedTrack = (
                 GatedTrack or TRACK_ESTIMATES_RAD.TrackParam[j].Status.Gated)
             PredictedTrack = (
@@ -415,12 +462,20 @@ def TRACK_FUSION_HETEROGENEOUS_SENSORS(TRACK_ESTIMATES_FUS_in, TRACK_ESTIMATES_R
                              0] = TRACK_ESTIMATES_CAM.TrackParam[j].StateEstimate.py
             XTracks[count].x[3,
                              0] = TRACK_ESTIMATES_CAM.TrackParam[j].StateEstimate.vy
-            XTracks[count].P = TRACK_ESTIMATES_CAM.TrackParam[j].StateEstimate.ErrCOV[:4, :4]
+
+            P_ = TRACK_ESTIMATES_CAM.TrackParam[j].StateEstimate.ErrCOV
+            row1 = P_[[StateCovIndex[0]], StateCovIndex]
+            row2 = P_[[StateCovIndex[1]], StateCovIndex]
+            row3 = P_[[StateCovIndex[2]], StateCovIndex]
+            row4 = P_[[StateCovIndex[3]], StateCovIndex]
+            XTracks[count].P = copy.deepcopy(
+                np.array([row1, row2, row3, row4]))
+
             # % update various flags here
             CameraCatch = (
                 CameraCatch or TRACK_ESTIMATES_CAM.TrackParam[j].SensorSource.CameraCatch)
-            CameraSource = (
-                np.any(CameraSource) or np.any(TRACK_ESTIMATES_CAM.TrackParam[j].SensorSource.CameraSource))
+            CameraSource = elementWiseOr(
+                CameraSource, TRACK_ESTIMATES_CAM.TrackParam[j].SensorSource.CameraSource)
             GatedTrack = (
                 GatedTrack or TRACK_ESTIMATES_CAM.TrackParam[j].Status.Gated)
             PredictedTrack = (
@@ -440,13 +495,13 @@ def TRACK_FUSION_HETEROGENEOUS_SENSORS(TRACK_ESTIMATES_FUS_in, TRACK_ESTIMATES_R
         elif(nGatedTracks > 0):  # % else track fusion
             # % assign equal weights to all local sensor estimates
             weights[0, 0:count] = 1/nGatedTracks
-            Xfus, Pfus = CovarianceIntersection(
+            Xfus, Pfus = CCovarianceIntersection(
                 XTracks[:count], weights[0, 0:count])
-            TRACK_ESTIMATES_FUS.TrackParam[idx].StateEstimate.px = Xfus[1, 0]
-            TRACK_ESTIMATES_FUS.TrackParam[idx].StateEstimate.vx = Xfus[2, 0]
-            TRACK_ESTIMATES_FUS.TrackParam[idx].StateEstimate.py = Xfus[3, 0]
-            TRACK_ESTIMATES_FUS.TrackParam[idx].StateEstimate.vy = Xfus[4, 0]
-            #TRACK_ESTIMATES_FUS.TrackParam[idx].StateEstimate.ErrCOV[:4, :4] = Pfus
+            TRACK_ESTIMATES_FUS.TrackParam[idx].StateEstimate.px = Xfus[0, 0]
+            TRACK_ESTIMATES_FUS.TrackParam[idx].StateEstimate.vx = Xfus[1, 0]
+            TRACK_ESTIMATES_FUS.TrackParam[idx].StateEstimate.py = Xfus[2, 0]
+            TRACK_ESTIMATES_FUS.TrackParam[idx].StateEstimate.vy = Xfus[3, 0]
+            # TRACK_ESTIMATES_FUS.TrackParam[idx].StateEstimate.ErrCOV[:4, :4] = Pfus
 
             P_ = TRACK_ESTIMATES_FUS.TrackParam[idx].StateEstimate.ErrCOV
             P_[[StateCovIndex[0]], StateCovIndex] = Pfus[0]

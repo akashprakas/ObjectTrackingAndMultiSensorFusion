@@ -234,11 +234,12 @@ def GATE_FUSED_TRACK_WITH_LOCAL_TRACKS(TRACK_ESTIMATES_FUS, TRACK_ESTIMATES_RAD,
 
     @dataclass
     class CGATED_TRACK_INFO:
-        nGatedRadarTracks = 0
-        nGatedCameraTracks = 0
-        RadarTracks = np.zeros((1, maxNumLocalTracks), dtype=int)
-        CameraTracks = np.zeros((1, maxNumLocalTracks))
-    GATED_TRACK_INFO = [CGATED_TRACK_INFO() for i in range(maxNumFusedTracks)]
+        nGatedRadarTracks: int = 0
+        nGatedCameraTracks: int = 0
+        RadarTracks: np.array = np.zeros((1, maxNumLocalTracks), dtype=int)
+        CameraTracks: np.array = np.zeros((1, maxNumLocalTracks))
+    GATED_TRACK_INFO = [copy.deepcopy(CGATED_TRACK_INFO())
+                        for i in range(maxNumFusedTracks)]
 
     @dataclass
     class CUNGATED_TRACK_INFO:
@@ -256,14 +257,14 @@ def GATE_FUSED_TRACK_WITH_LOCAL_TRACKS(TRACK_ESTIMATES_FUS, TRACK_ESTIMATES_RAD,
     velCovIdx = [1, 4]
 
     @dataclass
-    class FusState:
-        x = np.zeros((2, 1))
-        P = np.zeros((2, 2))
+    class CFusState:
+        x: np.array = np.zeros((2, 1))
+        P: np.array = np.zeros((2, 2))
 
-    xFusPos = FusState()
-    xFusVel = FusState()
-    xLocalPos = FusState()
-    xLocalVel = FusState()
+    xFusPos = copy.deepcopy(CFusState())
+    xFusVel = copy.deepcopy(CFusState())
+    xLocalPos = copy.deepcopy(CFusState())
+    xLocalVel = copy.deepcopy(CFusState())
 
     # % create the association matrix for radar local tracks
     for i in range(TRACK_ESTIMATES_FUS.nValidTracks):
@@ -292,9 +293,9 @@ def GATE_FUSED_TRACK_WITH_LOCAL_TRACKS(TRACK_ESTIMATES_FUS, TRACK_ESTIMATES_RAD,
             dist = np.sqrt((xFusPos.x[0, 0] - xLocalPos.x[0, 0])
                            ** 2 + (xFusPos.x[1, 0] - xLocalPos.x[1, 0])**2)
             if(dist <= np.sqrt(GammaSqPos)):  # % if Gated set the gated track info
-                nGatedTracksRad = nGatedTracksRad + 1
                 GATED_TRACK_INFO[i].RadarTracks[0, nGatedTracksRad] = j
                 UNGATED_TRACK_INFO.UngatedRadarTracks[0, j] = False
+                nGatedTracksRad = nGatedTracksRad + 1
 
         for j in range(TRACK_ESTIMATES_CAM.nValidTracks):  # % for each of the camera tracks
             xLocalPos.x[0, 0] = TRACK_ESTIMATES_CAM.TrackParam[j].StateEstimate.px
@@ -306,9 +307,9 @@ def GATE_FUSED_TRACK_WITH_LOCAL_TRACKS(TRACK_ESTIMATES_FUS, TRACK_ESTIMATES_RAD,
             dist = np.sqrt((xFusPos.x[0, 0] - xLocalPos.x[0, 0])
                            ** 2 + (xFusPos.x[1, 0] - xLocalPos.x[1, 0])**2)
             if(dist <= np.sqrt(GammaSqPos)):
-                nGatedTracksCam = nGatedTracksCam + 1
                 GATED_TRACK_INFO[i].CameraTracks[0, nGatedTracksCam] = j
                 UNGATED_TRACK_INFO.UngatedCameraTracks[0, j] = False
+                nGatedTracksCam = nGatedTracksCam + 1
 
         # % Update the Gated meas count info
         GATED_TRACK_INFO[i].nGatedRadarTracks = nGatedTracksRad
