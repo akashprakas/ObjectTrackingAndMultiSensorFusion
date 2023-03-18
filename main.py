@@ -8,6 +8,7 @@ from model import *
 from gating import *
 from fusion import *
 from trackManger import *
+import matplotlib.pyplot as plt
 
 #  =======================================>  SET MODEL PARAMETERS% <=============================================================================================
 sigmaQ = 1
@@ -171,7 +172,9 @@ for t in range(150):
     TRACK_ESTIMATES_RAD, _ = DELETE_LOST_TRACK(TRACK_ESTIMATES_RAD, TrackParam)
     print("Number of radar tracks", TRACK_ESTIMATES_RAD.nValidTracks)
 
-# =============================================================================================================================================================
+    # ===============================================================================
+    # STATE PREDICTION OF CAMERA OBJECTS/TRACKS
+    # *******************************************************************************
 
     CAMERA_CLUSTERS, nCountsCamera = findMeanAndVarCAM(
         CAMERA_MEAS_CTS, CAMERA_CLUSTERS, epsPosDBSCAN=5)
