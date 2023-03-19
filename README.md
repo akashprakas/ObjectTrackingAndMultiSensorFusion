@@ -76,7 +76,7 @@ If there are valid tracks for each track we loop through them and then loop the 
 
 1. The track management remains essentially the same following through the same step as that of the radar part. Please read through the code to understand more.
 
-## FUSION Part
+## Track To Track Fusion for Radar and Camera Tracks
 
 1. The fusion trackers are maintained as separted track list. Initially those trackers are predicted to the current time stamp using aconstant velocity model.
 2. In the gating part we loop through each track and for each track a loop is there is for a loop for radar and separate loop for camera also where we associate the previous fused track with the current sensor measurements using mehanabolis distance.
